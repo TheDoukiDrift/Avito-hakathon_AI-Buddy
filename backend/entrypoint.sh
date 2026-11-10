@@ -1,43 +1,21 @@
 #!/bin/sh
-# Старт backend-контейнера: дождаться БД → миграции → сиды → uvicorn.
-set -e
+# Container entrypoint: wait for the DB, migrate, seed (idempotent), then run CMD.
+set -eu
 
-echo "[entrypoint] ждём PostgreSQL..."
-python - <<'PY'
-import os
-import sys
-import time
+if [ "${SKIP_MIGRATIONS:-0}" != "1" ]; then
+  attempts="${DB_WAIT_ATTEMPTS:-30}"
+  i=0
+  until alembic upgrade head; do
+    i=$((i + 1))
+    if [ "$i" -ge "$attempts" ]; then
+      echo "[entrypoint] alembic upgrade failed after ${attempts} attempts" >&2
+      exit 1
+    fi
+    echo "[entrypoint] database not ready (attempt ${i}/${attempts}), retrying in 2s"
+    sleep 2
+  done
 
-import psycopg
+  python -m app.seeds
+fi
 
-dsn = os.environ.get("DATABASE_URL", "")
-# SQLAlchemy-URL вида postgresql+psycopg:// → psycopg принимает postgresql://
-dsn = dsn.replace("postgresql+psycopg://", "postgresql://").replace(
-    "postgresql+asyncpg://", "postgresql://"
-)
-if not dsn:
-    print("[entrypoint] DATABASE_URL не задан", file=sys.stderr)
-    sys.exit(1)
-
-deadline = time.time() + 60
-while True:
-    try:
-        with psycopg.connect(dsn, connect_timeout=3) as conn:
-            conn.execute("SELECT 1")
-        print("[entrypoint] PostgreSQL готов")
-        break
-    except Exception as exc:  # noqa: BLE001 — ждём любую ошибку соединения
-        if time.time() > deadline:
-            print(f"[entrypoint] PostgreSQL недоступен: {exc}", file=sys.stderr)
-            sys.exit(1)
-        time.sleep(2)
-PY
-
-echo "[entrypoint] применяем миграции..."
-alembic upgrade head
-
-echo "[entrypoint] загружаем сиды..."
-python -m app.seeds
-
-echo "[entrypoint] запускаем uvicorn..."
-exec uvicorn app.main:app --host 0.0.0.0 --port 8000
+exec "$@"

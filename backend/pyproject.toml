@@ -1,0 +1,29 @@
+[project]
+name = "ai-buddy-backend"
+version = "0.1.0"
+description = "AI-buddy — ИИ-наставник для стажёров (Avito case, Hack&Change 2026)"
+requires-python = ">=3.12"
+dependencies = []
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+asyncio_default_fixture_loop_scope = "function"
+testpaths = ["tests"]
+addopts = "--cov=app --cov=mcp_server --cov-report=term-missing"
+
+[tool.coverage.run]
+branch = false
+source = ["app", "mcp_server"]
+omit = [
+    "app/seeds.py",
+    "alembic/*",
+]
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+exclude = ["alembic/versions"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B"]
+ignore = ["B008"]

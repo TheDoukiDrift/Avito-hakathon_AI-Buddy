@@ -78,12 +78,19 @@ docker compose up --build
 Пример `.env` (секретов в репозитории нет):
 
 ```dotenv
-LLM_BASE_URL=https://api.example.com/v1
-LLM_API_KEY=
-LLM_MODEL=gpt-4o-mini
-DATABASE_URL=postgresql+asyncpg://buddy:buddy@db:5432/buddy
+POSTGRES_USER=avito
+POSTGRES_PASSWORD=avito
+POSTGRES_DB=ai_buddy
+DATABASE_URL=postgresql+psycopg://avito:avito@postgres:5432/ai_buddy
 REDIS_URL=redis://redis:6379/0
+LLM_BASE_URL=
+LLM_API_KEY=
+LLM_MODEL=qwen2.5-72b-instruct
+MCP_SERVER_URL=http://mcp:8001
 ```
+
+Полный список переменных — в `.env.example`. Внутри `docker compose` БД и Redis
+доступны по именам сервисов (`postgres`, `redis`), MCP-сервер — по `mcp`.
 
 `LLM_API_KEY` можно оставить пустым — тогда используется оффлайн-стаб `FakeLLM`
 и прототип работает без внешнего ключа.
@@ -117,7 +124,7 @@ REDIS_URL=redis://redis:6379/0
 | Аудит событий | – | + (подопечного) | + (команда) | + |
 
 Бенефиты и финансовые сведения исключены полностью — вне области задачи кейса.
-Матрица зафиксирована в `DECISIONS.md` и покрыта отдельными RBAC-тестами.
+Матрица зафиксирована в `docs/DECISIONS.md` и покрыта отдельными RBAC-тестами.
 
 ## Порядок проверки сценариев (для экспертов)
 
@@ -185,8 +192,9 @@ make test
 
 ## SDD-спецификации
 
-Папка `specs/` (OpenSpec) содержит спецификации поведения агента, инструментов и
-guardrails, по которым велась разработка AI-функций.
+Папка `specs/` (OpenSpec) — спецификации поведения агента, инструментов и
+guardrails, по которым велась разработка AI-функций; наполняется по мере
+готовности.
 
 ## Видеодемонстрация
 
@@ -195,28 +203,32 @@ guardrails, по которым велась разработка AI-функц�
 ## Структура репозитория
 
 ```
-backend/            # приложение
-  app/              # API, агент, доменные сервисы
-  services/         # имитации корпоративных сервисов
+backend/            # FastAPI-приложение + MCP-сервер (один образ, два процесса)
+  app/              # API, агент, доменные сервисы, ORM-модели, сиды
+    services/       # имитации корпоративных сервисов (RBAC, отсутствия, чек-лист)
+  alembic/          # миграции схемы
+  mcp_server/       # MCP-сервер (FastMCP) — сервис `mcp`, порт 8001
   tests/            # pytest
-mcp/                # MCP-сервер (FastMCP, отдельный процесс)
 frontend/
   src/              # components, stores, api
-specs/              # OpenSpec-спецификации
-docs/               # материалы кейса, план, решения
-scripts/            # сиды и служебные скрипты
-docker-compose.yml
+docs/               # README, PLAN.md, DECISIONS.md
+ref/                # материалы кейса и Q&A
+specs/              # OpenSpec-спецификации (появятся к сдаче)
+docker-compose.yml  # postgres, redis, backend (8000), mcp (8001), frontend (3000)
 .env.example
 Makefile
+nginx.conf
 .github/workflows/ci.yml
 ```
 
 ## Статус разработки
 
-Репозиторий на стадии планирования: код ещё не реализован, секции со ссылками
-на код, CI и видеодемонстрацию будут заполнены по мере разработки. План на 7
-дней, сценарии и принятые трактовки неоднозначностей кейса — в `PLAN.md`,
-развёрнутые обоснования решений — в `DECISIONS.md`.
+Репозиторий в активной разработке: бэкенд реализован и покрыт тестами
+(`pytest`, 79 тестов, покрытие прикладного кода 96%), MCP-сервер поднимается
+отдельным процессом, фронтенд — в работе. Секции со ссылками на код, CI и
+видеодемонстрацию заполняются по мере готовности. План на 7 дней, сценарии и
+принятые трактовки неоднозначностей кейса — в `docs/PLAN.md`, развёрнутые
+обоснования решений — в `docs/DECISIONS.md`.
 
 
 ## Справочная информация 
