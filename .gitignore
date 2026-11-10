@@ -1,0 +1,39 @@
+# --- Python ---
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+htmlcov/
+.coverage
+.coverage.*
+coverage.xml
+junit.xml
+
+# --- Node ---
+node_modules/
+dist/
+dist-ssr/
+.vite/
+coverage/
+*.tsbuildinfo
+
+# --- Секреты: .env не коммитим (шаблон — .env.example) ---
+.env
+.env.*
+!.env.example
+
+# --- ОС и редакторы ---
+.DS_Store
+Thumbs.db
+desktop.ini
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# --- Крупные медиа из ref/ (видео не храним в репозитории) ---
+ref/*.mp4
