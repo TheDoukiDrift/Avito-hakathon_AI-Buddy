@@ -39,6 +39,11 @@ class ChatRequest(BaseModel):
     message: str = Field(min_length=1, max_length=4000)
 
 
+class SourceOut(BaseModel):
+    title: str
+    source_url: str
+
+
 class MessageOut(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
@@ -47,6 +52,7 @@ class MessageOut(BaseModel):
     content: str
     created_at: datetime
     tool_calls: list | dict | None = None
+    sources: list[SourceOut] | None = None
 
 
 class ChecklistItemOut(BaseModel):
@@ -97,6 +103,16 @@ class AbsenceOut(BaseModel):
 
 class AbsenceDecision(BaseModel):
     comment: str | None = Field(default=None, max_length=2000)
+
+
+class AuditEventOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    user_id: int | None = None
+    action: str
+    payload: dict | None = None
+    created_at: datetime
 
 
 class ContactOut(BaseModel):

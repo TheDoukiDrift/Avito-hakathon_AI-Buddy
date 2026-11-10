@@ -2,11 +2,17 @@
 
 from __future__ import annotations
 
+import re
 from collections.abc import AsyncIterator, Sequence
 from dataclasses import dataclass, field
 from typing import Any, Literal, Protocol
 
 from app.models import Role
+
+
+def split_chunks(text: str) -> list[str]:
+    """Split text into word-sized chunks so SSE looks like a real token stream."""
+    return [chunk for chunk in re.split(r"(\s+)", text) if chunk]
 
 
 @dataclass
@@ -54,6 +60,18 @@ class AgentEvent:
     data: dict[str, Any] | None = None
 
 
+@dataclass
+class KbSnippet:
+    """A retrieved knowledge-base document as the model/UI may see it."""
+
+    title: str
+    source_url: str
+    content: str = ""
+
+    def as_source(self) -> dict[str, str]:
+        return {"title": self.title, "source_url": self.source_url}
+
+
 class LLMClient(Protocol):
     """A streaming chat-completions client."""
 
@@ -64,4 +82,5 @@ class LLMClient(Protocol):
         messages: Sequence[ChatTurn],
         context: AgentContext,
         tools: Sequence[dict[str, Any]] | None = None,
+        sources: Sequence[KbSnippet] = (),
     ) -> AsyncIterator[str]: ...

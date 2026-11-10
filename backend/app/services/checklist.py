@@ -54,23 +54,31 @@ async def get_checklist_for_actor(
     return await get_checklist(session, target)
 
 
-async def complete_item(session: AsyncSession, actor: User, item_id: int) -> ChecklistProgress:
-    """Toggle the item for the actor themselves (matrix: own checklist only)."""
+async def complete_item(
+    session: AsyncSession, actor: User, item_id: int, target: User | None = None
+) -> ChecklistEntry:
+    """Toggle an item on the *target* user's checklist.
+
+    The matrix grants completion of one's own checklist only, and only to an intern
+    (mentors/managers/HR BP get read-only visibility of their wards). The guard is
+    checked against the real target, not against the actor twice.
+    """
     item = await session.get(ChecklistItem, item_id)
     if item is None:
         raise NotFoundError("Пункт чек-листа не найден")
-    if not rbac.can_complete_checklist(actor, actor):
-        raise ForbiddenError("Отмечать пункты может только сам сотрудник")
+    target = target or actor
+    if not rbac.can_complete_checklist(actor, target):
+        raise ForbiddenError("Отмечать пункты может только стажёр в своём чек-листе")
 
     result = await session.execute(
         select(ChecklistProgress).where(
-            ChecklistProgress.user_id == actor.id, ChecklistProgress.item_id == item_id
+            ChecklistProgress.user_id == target.id, ChecklistProgress.item_id == item_id
         )
     )
     progress = result.scalar_one_or_none()
     if progress is None:
         progress = ChecklistProgress(
-            user_id=actor.id, item_id=item_id, status=ProgressStatus.pending
+            user_id=target.id, item_id=item_id, status=ProgressStatus.pending
         )
         session.add(progress)
 
@@ -81,7 +89,7 @@ async def complete_item(session: AsyncSession, actor: User, item_id: int) -> Che
         progress.status = ProgressStatus.done
         progress.completed_at = datetime.now(UTC)
     await session.flush()
-    return progress
+    return ChecklistEntry(item=item, status=progress.status, completed_at=progress.completed_at)
 
 
 def summarize(entries: list[ChecklistEntry]) -> tuple[int, int, ChecklistEntry | None]:

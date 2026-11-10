@@ -81,15 +81,35 @@ async def test_mentor_sees_intern_checklist(client):
 
 async def test_mentor_cannot_complete_intern_checklist_item(client):
     intern_headers = await auth_headers(client, INTERN)
-    mentor_headers = await auth_headers(client, MENTOR)
     checklist = (await client.get("/api/checklist", headers=intern_headers)).json()
     item_id = checklist["items"][0]["id"]
 
-    response = await client.post(f"/api/checklist/{item_id}/complete", headers=mentor_headers)
-    # the mentor marks *their own* (empty) checklist, not the intern's
-    assert response.status_code == 200
+    # The matrix grants completion to the intern only: privileged roles get read-only
+    # visibility of their wards, so marking an item is a 403 (not a silent own-list mark).
+    for email in (MENTOR, MANAGER, HR_BP):
+        headers = await auth_headers(client, email)
+        response = await client.post(f"/api/checklist/{item_id}/complete", headers=headers)
+        assert response.status_code == 403, email
+
     intern_after = (await client.get("/api/checklist", headers=intern_headers)).json()
     assert intern_after["done"] == 0
+
+
+async def test_intern_completes_own_checklist_item(client):
+    intern_headers = await auth_headers(client, INTERN)
+    checklist = (await client.get("/api/checklist", headers=intern_headers)).json()
+    item_id = checklist["items"][0]["id"]
+
+    response = await client.post(f"/api/checklist/{item_id}/complete", headers=intern_headers)
+    assert response.status_code == 200
+    body = response.json()
+    # the endpoint returns the full item, not just the new status
+    assert body["id"] == item_id
+    assert body["status"] == "done"
+    assert body["title"]
+
+    intern_after = (await client.get("/api/checklist", headers=intern_headers)).json()
+    assert intern_after["done"] == 1
 
 
 async def test_hr_bp_lists_team_absences(client):
@@ -126,3 +146,52 @@ async def test_mentor_reads_same_team_absence_and_unknown_id_is_404(client):
     hr_headers = await auth_headers(client, HR_BP)
     missing = await client.get("/api/absences/9999", headers=hr_headers)
     assert missing.status_code == 404
+
+
+async def test_audit_feed_is_scoped_by_role(client):
+    from app.db import get_session_factory
+    from app.models import Role, User
+    from app.services import audit as audit_service
+
+    intern_headers = await auth_headers(client, INTERN)
+    mentor_headers = await auth_headers(client, MENTOR)
+    hr_headers = await auth_headers(client, HR_BP)
+
+    checklist = (await client.get("/api/checklist", headers=intern_headers)).json()
+    item_id = checklist["items"][0]["id"]
+    await client.post(f"/api/checklist/{item_id}/complete", headers=intern_headers)
+
+    # An event from another team: visible only to HR BP.
+    async with get_session_factory()() as session:
+        outsider = User(
+            email="outsider@example.com",
+            password_hash="x",
+            role=Role.intern,
+            full_name="Чужой",
+            team="Other",
+        )
+        session.add(outsider)
+        await session.flush()
+        await audit_service.log(session, outsider.id, "test.other_team")
+        await session.commit()
+
+    own = {
+        event["action"] for event in (await client.get("/api/audit", headers=intern_headers)).json()
+    }
+    assert "checklist.completed" in own
+    assert "test.other_team" not in own
+
+    team = {
+        event["action"] for event in (await client.get("/api/audit", headers=mentor_headers)).json()
+    }
+    assert "checklist.completed" in team
+    assert "test.other_team" not in team
+
+    everything = {
+        event["action"] for event in (await client.get("/api/audit", headers=hr_headers)).json()
+    }
+    assert "test.other_team" in everything
+
+
+async def test_audit_requires_auth(client):
+    assert (await client.get("/api/audit")).status_code == 401

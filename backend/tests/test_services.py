@@ -53,8 +53,13 @@ def test_rbac_matrix_absences():
 
 
 def test_rbac_audit_and_contacts():
-    assert not rbac.can_view_audit(_user(1, Role.intern))
+    # Every role has an audit feed; the *scope* narrows it (README matrix).
+    assert rbac.can_view_audit(_user(1, Role.intern))
     assert rbac.can_view_audit(_user(2, Role.mentor))
+    assert rbac.audit_scope(_user(1, Role.intern)) == "own"
+    assert rbac.audit_scope(_user(2, Role.mentor)) == "team"
+    assert rbac.audit_scope(_user(3, Role.manager)) == "team"
+    assert rbac.audit_scope(_user(4, Role.hr_bp)) == "all"
     assert rbac.can_view_contacts(_user(1, Role.intern))
 
 

@@ -102,6 +102,20 @@ async def decide(
     return request
 
 
+async def latest_own_draft(session: AsyncSession, actor: User) -> AbsenceRequest | None:
+    """The draft a chat confirmation should apply to — always the actor's own."""
+    result = await session.execute(
+        select(AbsenceRequest)
+        .where(
+            AbsenceRequest.user_id == actor.id,
+            AbsenceRequest.status == AbsenceStatus.draft,
+        )
+        .order_by(AbsenceRequest.id.desc())
+        .limit(1)
+    )
+    return result.scalar_one_or_none()
+
+
 async def list_for_actor(
     session: AsyncSession, actor: User, target_user_id: int | None = None
 ) -> list[AbsenceRequest]:

@@ -11,7 +11,9 @@ services:
     volumes:
       - pgdata:/var/lib/postgresql/data
     ports:
-      - "5432:5432"
+      # только локально: БД не должна светиться в сеть
+      - "127.0.0.1:5432:5432"
+    restart: unless-stopped
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-avito} -d ${POSTGRES_DB:-ai_buddy}"]
       interval: 5s
@@ -22,7 +24,8 @@ services:
   redis:
     image: redis:7-alpine
     ports:
-      - "6379:6379"
+      - "127.0.0.1:6379:6379"
+    restart: unless-stopped
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
       interval: 5s
@@ -39,6 +42,8 @@ services:
       # внутри compose БД и Redis живут по именам сервисов
       DATABASE_URL: ${DATABASE_URL:-postgresql+psycopg://avito:avito@postgres:5432/ai_buddy}
       REDIS_URL: ${REDIS_URL:-redis://redis:6379/0}
+      # пусто = временный ключ процесса (см. .env.example)
+      SECRET_KEY: ${SECRET_KEY:-}
     depends_on:
       postgres:
         condition: service_healthy
@@ -46,6 +51,7 @@ services:
         condition: service_healthy
     ports:
       - "8000:8000"
+    restart: unless-stopped
     healthcheck:
       # no curl in python:3.12-slim — probe the API with the interpreter itself
       test:
@@ -74,8 +80,8 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
-    ports:
-      - "8001:8001"
+    # порт не публикуем: инструменты доступны только backend'у по имени сервиса
+    restart: unless-stopped
     healthcheck:
       # /mcp speaks streamable-http (POST + session), so probe the TCP port
       test:
@@ -96,6 +102,7 @@ services:
         condition: service_started
     ports:
       - "3000:80"
+    restart: unless-stopped
 
 volumes:
   pgdata:

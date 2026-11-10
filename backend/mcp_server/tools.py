@@ -122,9 +122,9 @@ async def checklist_complete(user_id: int, role: str, item_id: int) -> dict[str,
     """Отметить пункт чек-листа выполненным (или снять отметку)."""
     async with get_session_factory()() as session:
         actor = await _actor(session, user_id, role)
-        progress = await checklist_service.complete_item(session, actor, item_id)
+        entry = await checklist_service.complete_item(session, actor, item_id)
         await session.commit()
-        return {"item_id": item_id, "status": progress.status.value}
+        return {"item_id": item_id, "status": entry.status.value}
 
 
 async def contacts_lookup(user_id: int, role: str, query: str = "") -> dict[str, Any]:

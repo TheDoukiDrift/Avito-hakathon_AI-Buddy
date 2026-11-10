@@ -24,9 +24,9 @@ test:
 seed:
 	docker compose exec backend python -m app.seeds
 
-## Линтеры (подключим, когда появятся конфиги ruff/eslint)
+## Линтеры (конфиг ruff — в backend/pyproject.toml)
 lint:
-	@echo "lint: ruff / eslint подключаются вместе с кодом"
+	cd backend && ruff check . && ruff format --check .
 
 ## Пересобрать образы без запуска
 build:

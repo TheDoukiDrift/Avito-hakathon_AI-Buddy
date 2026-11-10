@@ -58,15 +58,27 @@ async def chat_stream(
     async def event_stream():
         agent = Agent(build_llm(get_settings()))
         parts: list[str] = []
-        try:
-            async for event in agent.stream(payload.message, turns, context):
-                if event.kind == "token":
-                    parts.append(event.text)
-                    yield _sse({"token": event.text})
-                elif event.kind == "tool_call":
-                    yield _sse({"tool_call": event.data})
-        except Exception as exc:  # noqa: BLE001 - never break the stream silently
-            yield _sse({"error": f"LLM недоступен: {exc.__class__.__name__}"})
+        sources: list[dict] = []
+        # A dedicated session: the request-scoped one may already be closed by the time
+        # the generator runs, and tool actions commit on their own.
+        async with get_session_factory()() as agent_session:
+            actor = await agent_session.get(User, user_id)
+            if actor is None:  # pragma: no cover - token came from this user
+                yield _sse({"error": "Пользователь не найден"})
+                return
+            try:
+                async for event in agent.stream(
+                    payload.message, turns, context, session=agent_session, user=actor
+                ):
+                    if event.kind == "token":
+                        parts.append(event.text)
+                        yield _sse({"token": event.text})
+                    elif event.kind == "tool_call":
+                        yield _sse({"tool_call": event.data})
+                    elif event.kind == "done" and event.data:
+                        sources = event.data.get("sources") or []
+            except Exception as exc:  # noqa: BLE001 - never break the stream silently
+                yield _sse({"error": f"LLM недоступен: {exc.__class__.__name__}"})
 
         answer = "".join(parts).strip()
         message_id = None
@@ -74,7 +86,11 @@ async def chat_stream(
             conversation_row = await persist_session.get(Conversation, conversation_id)
             if conversation_row is not None and answer:
                 stored = await chat_service.add_message(
-                    persist_session, conversation_row, MessageRole.assistant, answer
+                    persist_session,
+                    conversation_row,
+                    MessageRole.assistant,
+                    answer,
+                    sources=sources,
                 )
                 await audit.log(
                     persist_session,
@@ -83,11 +99,12 @@ async def chat_stream(
                     {
                         "chars": len(answer),
                         "llm": "api" if get_settings().llm_enabled else "fake",
+                        "sources": [source.get("title") for source in sources],
                     },
                 )
                 await persist_session.commit()
                 message_id = stored.id
-        yield _sse({"done": True, "message_id": message_id})
+        yield _sse({"done": True, "message_id": message_id, "sources": sources})
 
     return StreamingResponse(event_stream(), media_type="text/event-stream", headers=SSE_HEADERS)
 

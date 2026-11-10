@@ -188,8 +188,24 @@ class Message(Base):
     content: Mapped[str] = mapped_column(Text, nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
     tool_calls: Mapped[list | dict | None] = mapped_column(JSON, nullable=True)
+    # RAG provenance shown as «Источники: …» under the answer.
+    sources: Mapped[list | None] = mapped_column(JSON, nullable=True)
 
     conversation: Mapped[Conversation] = relationship(back_populates="messages")
+
+
+class KbDocument(Base):
+    """Knowledge base for the RAG scenario (synthetic, ADR-01/ADR-02)."""
+
+    __tablename__ = "kb_documents"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    title: Mapped[str] = mapped_column(String(255), nullable=False, unique=True)
+    content: Mapped[str] = mapped_column(Text, nullable=False)
+    source_url: Mapped[str] = mapped_column(String(500), nullable=False)
+    # Space-separated matching terms: Russian queries rarely match an English title.
+    keywords: Mapped[str] = mapped_column(Text, nullable=False, default="")
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
 
 
 class AuditEvent(Base):

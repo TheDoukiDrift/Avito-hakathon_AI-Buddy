@@ -66,6 +66,12 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r requirements.txt
 
+      - name: Ruff (lint + format)
+        working-directory: backend
+        run: |
+          ruff check .
+          ruff format --check .
+
       - name: Run tests with coverage
         working-directory: backend
         run: pytest --cov=app --cov-report=xml --cov-report=html --cov-fail-under=80
@@ -87,9 +93,9 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      # Версия pnpm берётся из package.json -> packageManager (pnpm@12.18.0),
+      # чтобы CI и Dockerfile (corepack) не расходились.
       - uses: pnpm/action-setup@v4
-        with:
-          version: 9
 
       - uses: actions/setup-node@v4
         with:
@@ -103,7 +109,7 @@ jobs:
 
       - name: Run tests
         working-directory: frontend
-        run: npx vitest run --coverage
+        run: pnpm coverage
 
       - name: Build
         working-directory: frontend

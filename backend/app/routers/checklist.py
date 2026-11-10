@@ -12,19 +12,20 @@ from app.services import users as users_service
 router = APIRouter(tags=["checklist"])
 
 
+def _entry_to_out(entry: checklist_service.ChecklistEntry) -> ChecklistItemOut:
+    return ChecklistItemOut(
+        id=entry.item.id,
+        week=entry.item.week,
+        title=entry.item.title,
+        description=entry.item.description,
+        position=entry.item.position,
+        status=entry.status,
+        completed_at=entry.completed_at,
+    )
+
+
 def _to_out(target: User, entries: list[checklist_service.ChecklistEntry]) -> ChecklistOut:
-    items = [
-        ChecklistItemOut(
-            id=entry.item.id,
-            week=entry.item.week,
-            title=entry.item.title,
-            description=entry.item.description,
-            position=entry.item.position,
-            status=entry.status,
-            completed_at=entry.completed_at,
-        )
-        for entry in entries
-    ]
+    items = [_entry_to_out(entry) for entry in entries]
     done = sum(1 for entry in entries if entry.status is ProgressStatus.done)
     return ChecklistOut(
         user_id=target.id, full_name=target.full_name, done=done, total=len(entries), items=items
@@ -46,18 +47,18 @@ async def get_checklist(
     return _to_out(target, entries)
 
 
-@router.post("/checklist/{item_id}/complete")
+@router.post("/checklist/{item_id}/complete", response_model=ChecklistItemOut)
 async def complete_checklist_item(
     item_id: int,
     user: User = Depends(get_current_user),
     session: AsyncSession = Depends(get_session),
-) -> dict:
-    progress = await checklist_service.complete_item(session, user, item_id)
+) -> ChecklistItemOut:
+    entry = await checklist_service.complete_item(session, user, item_id)
     await audit.log(
         session,
         user.id,
-        "checklist.completed" if progress.status is ProgressStatus.done else "checklist.reopened",
-        {"item_id": item_id, "status": progress.status.value},
+        "checklist.completed" if entry.status is ProgressStatus.done else "checklist.reopened",
+        {"item_id": item_id, "status": entry.status.value},
     )
     await session.commit()
-    return {"item_id": item_id, "status": progress.status.value}
+    return _entry_to_out(entry)

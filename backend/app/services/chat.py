@@ -29,9 +29,14 @@ async def add_message(
     role: MessageRole,
     content: str,
     tool_calls: list | dict | None = None,
+    sources: list[dict] | None = None,
 ) -> Message:
     message = Message(
-        conversation_id=conversation.id, role=role, content=content, tool_calls=tool_calls
+        conversation_id=conversation.id,
+        role=role,
+        content=content,
+        tool_calls=tool_calls,
+        sources=sources or None,
     )
     session.add(message)
     await session.flush()

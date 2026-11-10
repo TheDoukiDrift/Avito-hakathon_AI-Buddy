@@ -12,7 +12,7 @@ from app.config import get_settings
 from app.db import dispose_engine, get_engine
 from app.errors import AppError
 from app.models import Base
-from app.routers import absences, auth, chat, checklist, contacts, health
+from app.routers import absences, audit, auth, chat, checklist, contacts, health
 
 
 @asynccontextmanager
@@ -58,6 +58,7 @@ def create_app() -> FastAPI:
     app.include_router(checklist.router, prefix=api_prefix)
     app.include_router(absences.router, prefix=api_prefix)
     app.include_router(contacts.router, prefix=api_prefix)
+    app.include_router(audit.router, prefix=api_prefix)
     return app
 
 

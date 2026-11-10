@@ -7,11 +7,11 @@ their facts from `AgentContext`, which the agent fills from the services layer.
 
 from __future__ import annotations
 
-import re
 from collections.abc import AsyncIterator, Sequence
 from typing import Any
 
-from app.agent.base import AgentContext, ChatTurn
+from app.agent.actions import AgentAction, detect_action
+from app.agent.base import AgentContext, ChatTurn, KbSnippet, split_chunks
 
 ABSENCE_KEYWORDS = ("отгул", "отпуск", "больничн", "отсутств", "отпроситься", "заявк")
 CHECKLIST_KEYWORDS = ("чек-лист", "чеклист", "этап", "шаг", "прогресс", "адаптац")
@@ -92,7 +92,7 @@ def _routing_answer(context: AgentContext, text: str) -> str:
     return "\n".join(lines)
 
 
-def answer(message: str, context: AgentContext) -> str:
+def answer(message: str, context: AgentContext, sources: Sequence[KbSnippet] = ()) -> str:
     """Rule-based answer. Pure function — the unit under test."""
     text = message.strip().lower()
     if _matches(text, ABSENCE_KEYWORDS):
@@ -101,12 +101,11 @@ def answer(message: str, context: AgentContext) -> str:
         return _checklist_answer(context)
     if _matches(text, ROUTING_KEYWORDS):
         return _routing_answer(context, text)
+    if sources:
+        # RAG path: the retrieved document is the answer instead of the "no answer" note.
+        top = sources[0]
+        return f"{top.title}\n\n{top.content}".strip()
     return KNOWLEDGE_BASE_NOTE
-
-
-def _chunks(text: str) -> list[str]:
-    """Split into word-sized chunks so SSE looks like a real token stream."""
-    return [chunk for chunk in re.split(r"(\s+)", text) if chunk]
 
 
 class FakeLLM:
@@ -114,12 +113,21 @@ class FakeLLM:
 
     name = "fake"
 
+    def plan(self, message: str, context: AgentContext) -> AgentAction | None:
+        """The "tool call" of the offline model: a keyword-derived action or None.
+
+        Only `FakeLLM` implements `plan()`; the OpenAI-compatible client is handed the
+        same tool schemas but its tool_calls are not executed yet (see `loop.py`).
+        """
+        return detect_action(message)
+
     async def stream(
         self,
         messages: Sequence[ChatTurn],
         context: AgentContext,
         tools: Sequence[dict[str, Any]] | None = None,
+        sources: Sequence[KbSnippet] = (),
     ) -> AsyncIterator[str]:
         last_user = next((m.content for m in reversed(messages) if m.role == "user"), "")
-        for chunk in _chunks(answer(last_user, context)):
+        for chunk in split_chunks(answer(last_user, context, sources)):
             yield chunk

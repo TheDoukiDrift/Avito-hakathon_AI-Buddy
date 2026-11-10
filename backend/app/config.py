@@ -2,11 +2,15 @@
 
 from __future__ import annotations
 
+import logging
+import secrets
 from functools import lru_cache
 from urllib.parse import urlsplit
 
-from pydantic import AliasChoices, Field, field_validator
+from pydantic import AliasChoices, Field, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+logger = logging.getLogger(__name__)
 
 
 class Settings(BaseSettings):
@@ -18,7 +22,10 @@ class Settings(BaseSettings):
     debug: bool = False
 
     database_url: str = "sqlite+aiosqlite:///./ai_buddy.db"
-    secret_key: str = "dev-secret-change-me"
+    # No baked-in default: an empty value means "generate an ephemeral key for this
+    # process" (see the validator below). Tokens then die with the process instead of
+    # being signed with a secret that is public in git.
+    secret_key: str = ""
     token_ttl_seconds: int = 60 * 60 * 24
 
     redis_url: str = "redis://localhost:6379/0"
@@ -60,6 +67,23 @@ class Settings(BaseSettings):
         elif value.startswith("sqlite:///"):
             value = "sqlite+aiosqlite:///" + value[len("sqlite:///") :]
         return value
+
+    @model_validator(mode="after")
+    def _ensure_secret_key(self) -> Settings:
+        """Generate an ephemeral signing key instead of shipping a default one.
+
+        Judges may run the stack without any env (the prototype must start), so an
+        unset `SECRET_KEY` is a warning, not a crash: the process gets a random key,
+        and previously issued tokens stop validating after a restart.
+        """
+        if not self.secret_key.strip():
+            object.__setattr__(self, "secret_key", secrets.token_hex(32))
+            logger.warning(
+                "SECRET_KEY не задан — сгенерирован временный ключ для этого процесса. "
+                "Токены перестанут действовать после перезапуска. "
+                "Сгенерируйте постоянный: openssl rand -hex 32"
+            )
+        return self
 
     @property
     def llm_enabled(self) -> bool:

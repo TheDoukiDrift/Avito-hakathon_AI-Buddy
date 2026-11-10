@@ -7,6 +7,8 @@ test in `tests/test_rbac.py`.
 
 from __future__ import annotations
 
+from typing import Literal
+
 from app.models import Role, User
 
 PRIVILEGED_ROLES = (Role.mentor, Role.manager, Role.hr_bp)
@@ -34,8 +36,9 @@ def can_view_checklist(actor: User, target: User) -> bool:
 
 
 def can_complete_checklist(actor: User, target: User) -> bool:
-    # The matrix only grants completion of one's own checklist; mentors get read-only.
-    return actor.id == target.id
+    # The matrix only grants completion of one's own checklist, and only to an intern:
+    # mentors/managers/HR BP see wards read-only.
+    return actor.id == target.id and actor.role is Role.intern
 
 
 def can_view_absence(actor: User, target: User) -> bool:
@@ -60,4 +63,14 @@ def can_view_contacts(actor: User) -> bool:
 
 
 def can_view_audit(actor: User) -> bool:
-    return is_privileged(actor)
+    # Every role has an audit feed; the *scope* is narrowed by `audit_scope`.
+    return True
+
+
+def audit_scope(actor: User) -> Literal["all", "team", "own"]:
+    """Which slice of `audit_events` a role may read (README matrix)."""
+    if actor.role is Role.hr_bp:
+        return "all"
+    if actor.role in (Role.mentor, Role.manager):
+        return "team"
+    return "own"
