@@ -3,8 +3,9 @@
 from __future__ import annotations
 
 from functools import lru_cache
+from urllib.parse import urlsplit
 
-from pydantic import field_validator
+from pydantic import AliasChoices, Field, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -29,9 +30,24 @@ class Settings(BaseSettings):
 
     mcp_host: str = "0.0.0.0"
     mcp_port: int = 8001
-    mcp_url: str = "http://localhost:8001/mcp"
+    # `.env` / CI / compose all use MCP_SERVER_URL; MCP_URL is kept as a legacy alias.
+    mcp_url: str = Field(
+        default="http://localhost:8001/mcp",
+        validation_alias=AliasChoices("MCP_SERVER_URL", "MCP_URL"),
+    )
 
     cors_origins: str = "*"
+
+    @field_validator("mcp_url")
+    @classmethod
+    def _normalize_mcp_url(cls, value: str) -> str:
+        """`MCP_SERVER_URL` names only host:port — point it at the streamable-http path."""
+        value = value.strip().rstrip("/")
+        if not value:
+            return "http://localhost:8001/mcp"
+        if not urlsplit(value).path:
+            value = f"{value}/mcp"
+        return value
 
     @field_validator("database_url")
     @classmethod

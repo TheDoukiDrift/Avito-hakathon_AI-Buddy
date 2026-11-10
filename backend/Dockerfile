@@ -13,15 +13,15 @@ RUN pip install --no-cache-dir -r requirements.txt
 COPY . .
 
 RUN useradd --create-home --uid 1000 appuser \
-    && chmod +x entrypoint.sh \
+    && chmod +x entrypoint.sh mcp_entrypoint.sh \
     && chown -R appuser:appuser /app
 
 USER appuser
 
 EXPOSE 8000 8001
 
-HEALTHCHECK --interval=30s --timeout=3s --start-period=20s --retries=3 \
-    CMD python -c "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/api/health')" || exit 1
+# No image-level HEALTHCHECK: the same image backs two services on different
+# ports (backend :8000, mcp :8001), so each one declares its own in compose.
 
 ENTRYPOINT ["./entrypoint.sh"]
 CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]
