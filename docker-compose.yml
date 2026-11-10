@@ -35,7 +35,8 @@ services:
   backend:
     build:
       context: ./backend
-    command: ["/app/entrypoint.sh"]
+    # CMD образа (uvicorn app.main:app) — entrypoint уже задан в Dockerfile,
+    # повторный `command: entrypoint.sh` уводил процесс в бесконечный рекурсивный exec.
     env_file:
       - .env
     environment:
