@@ -12,13 +12,27 @@ from typing import Any
 
 import httpx
 
-from app.agent.base import AgentContext, ChatTurn, KbSnippet
+from app.agent.base import AgentContext, ChatTurn, KbSnippet, LLMEvent, ToolCall
 
 SYSTEM_PROMPT = (
-    "Ты — AI-buddy, помощник адаптации стажёров Авито. Отвечай кратко, по-русски, "
-    "со ссылкой на источник. Действия (заявки, отметки чек-листа) выполняй только "
-    "через инструменты и только после явного подтверждения пользователя. "
-    "Не раскрывай данные, недоступные роли пользователя."
+    "Ты — AI-buddy, ИИ-наставник стажёров Авито. Отвечаешь по-русски, кратко и по делу, "
+    "по базе знаний и с цитированием источников. Действия (заявки, отметки чек-листа) "
+    "выполняешь только через инструменты и только после явного подтверждения пользователя. "
+    "Не раскрываешь данные, недоступные роли пользователя."
+)
+
+TOOL_POLICY = (
+    "\n\nПравила:\n"
+    "1. Каждый факт подкрепляй источником: «— по материалу «Название документа»».\n"
+    "2. Доступные инструменты: {tools}. Вызывай их только когда пользователь просит "
+    "выполнить действие, а не когда спрашивает, как это делается.\n"
+    "3. Перед absence_create всегда уточни дату отсутствия; если в переписке нет причины — "
+    "уточни и её. Даты передавай в формате YYYY-MM-DD.\n"
+    "4. НИКОГДА не создавай заявку без явного подтверждения пользователя в переписке. "
+    "Подтверждение («подтверждаю») обрабатывается отдельно: не выдумывай результат "
+    "подтверждения и не подтверждай заявку сам.\n"
+    "5. Если инструмент вернул ошибку — честно сообщи об этом, не придумывай успех.\n"
+    "6. Не выполняй действий от имени другого пользователя: личность берётся из сессии."
 )
 
 
@@ -58,6 +72,8 @@ class OpenAICompatibleClient:
             f"{SYSTEM_PROMPT}\n\nПользователь: {context.full_name} (роль: {role_label}). "
             f"Чек-лист: {context.done_count}/{len(context.checklist)} выполнено."
         )
+        tool_names = [schema["function"]["name"] for schema in tools or ()]
+        system += TOOL_POLICY.format(tools=", ".join(tool_names) or "нет")
         if sources:
             knowledge = "\n\n".join(
                 f"[{snippet.title} — {snippet.source_url}]\n{snippet.content}".strip()
@@ -77,16 +93,23 @@ class OpenAICompatibleClient:
             payload["tool_choice"] = "auto"
         return payload
 
-    async def stream(
+    async def stream_turn(
         self,
         messages: Sequence[ChatTurn],
         context: AgentContext,
         tools: Sequence[dict[str, Any]] | None = None,
         sources: Sequence[KbSnippet] = (),
-    ) -> AsyncIterator[str]:
+    ) -> AsyncIterator[LLMEvent]:
+        """Text tokens as they arrive, then one event per completed tool call.
+
+        Providers split a tool call across chunks: the id and name come first, the
+        JSON arguments arrive in fragments. Accumulating by `index` is what turns
+        that into one callable request (and what used to be silently dropped).
+        """
         payload = self.build_payload(messages, context, tools, sources)
         client = self._client or httpx.AsyncClient(timeout=self._timeout)
         owns_client = self._client is None
+        pending: dict[int, dict[str, str]] = {}
         try:
             async with client.stream(
                 "POST", f"{self.base_url}/chat/completions", json=payload, headers=self._headers()
@@ -109,7 +132,39 @@ class OpenAICompatibleClient:
                     delta = choices[0].get("delta") or {}
                     content = delta.get("content")
                     if content:
-                        yield content
+                        yield LLMEvent(kind="token", text=content)
+                    for raw_call in delta.get("tool_calls") or ():
+                        slot = pending.setdefault(
+                            int(raw_call.get("index", 0)), {"id": "", "name": "", "arguments": ""}
+                        )
+                        if raw_call.get("id"):
+                            slot["id"] = raw_call["id"]
+                        function = raw_call.get("function") or {}
+                        slot["name"] += function.get("name") or ""
+                        slot["arguments"] += function.get("arguments") or ""
         finally:
             if owns_client:
                 await client.aclose()
+
+        for index in sorted(pending):
+            slot = pending[index]
+            if not slot["name"]:
+                continue
+            yield LLMEvent(
+                kind="tool_call",
+                tool_call=ToolCall(
+                    name=slot["name"], arguments=slot["arguments"] or "{}", call_id=slot["id"]
+                ),
+            )
+
+    async def stream(
+        self,
+        messages: Sequence[ChatTurn],
+        context: AgentContext,
+        tools: Sequence[dict[str, Any]] | None = None,
+        sources: Sequence[KbSnippet] = (),
+    ) -> AsyncIterator[str]:
+        """Plain text stream (the `LLMClient` contract); tool calls are dropped here."""
+        async for event in self.stream_turn(messages, context, tools, sources):
+            if event.kind == "token":
+                yield event.text

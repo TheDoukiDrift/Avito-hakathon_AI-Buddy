@@ -8,12 +8,15 @@ from app.agent.base import (
     ContactSnapshot,
     KbSnippet,
     LLMClient,
+    LLMEvent,
+    ToolCall,
 )
+from app.agent.dates import local_today, parse_date_phrase
 from app.agent.fake import FakeLLM
 from app.agent.loop import Agent, build_context
 from app.agent.openai_client import OpenAICompatibleClient
 from app.agent.tools import TOOL_SCHEMAS
-from app.config import Settings
+from app.config import Settings, get_settings
 
 
 def build_llm(settings: Settings) -> LLMClient:
@@ -27,6 +30,11 @@ def build_llm(settings: Settings) -> LLMClient:
     return FakeLLM()
 
 
+def get_llm() -> LLMClient:
+    """FastAPI dependency; tests override it to inject a stub client (no network)."""
+    return build_llm(get_settings())
+
+
 __all__ = [
     "Agent",
     "AgentContext",
@@ -37,8 +45,13 @@ __all__ = [
     "FakeLLM",
     "KbSnippet",
     "LLMClient",
+    "LLMEvent",
     "OpenAICompatibleClient",
     "TOOL_SCHEMAS",
+    "ToolCall",
     "build_context",
     "build_llm",
+    "get_llm",
+    "local_today",
+    "parse_date_phrase",
 ]

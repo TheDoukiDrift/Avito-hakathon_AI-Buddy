@@ -61,6 +61,24 @@ class AgentEvent:
 
 
 @dataclass
+class ToolCall:
+    """A tool call the model asked for — arguments still raw JSON, not yet trusted."""
+
+    name: str
+    arguments: str = "{}"
+    call_id: str = ""
+
+
+@dataclass
+class LLMEvent:
+    """One piece of a streamed assistant turn: text or a completed tool call."""
+
+    kind: Literal["token", "tool_call"]
+    text: str = ""
+    tool_call: ToolCall | None = None
+
+
+@dataclass
 class KbSnippet:
     """A retrieved knowledge-base chunk as the model/UI may see it."""
 
@@ -85,3 +103,21 @@ class LLMClient(Protocol):
         tools: Sequence[dict[str, Any]] | None = None,
         sources: Sequence[KbSnippet] = (),
     ) -> AsyncIterator[str]: ...
+
+
+class ToolCallingClient(Protocol):
+    """A client whose stream also carries the model's `tool_calls`.
+
+    `FakeLLM` implements `plan()` instead; the agent loop picks whichever the
+    client provides (`app/agent/loop.py`).
+    """
+
+    name: str
+
+    def stream_turn(
+        self,
+        messages: Sequence[ChatTurn],
+        context: AgentContext,
+        tools: Sequence[dict[str, Any]] | None = None,
+        sources: Sequence[KbSnippet] = (),
+    ) -> AsyncIterator[LLMEvent]: ...

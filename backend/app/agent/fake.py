@@ -150,8 +150,9 @@ class FakeLLM:
     def plan(self, message: str, context: AgentContext) -> AgentAction | None:
         """The "tool call" of the offline model: a keyword-derived action or None.
 
-        Only `FakeLLM` implements `plan()`; the OpenAI-compatible client is handed the
-        same tool schemas but its tool_calls are not executed yet (see `loop.py`).
+        Only `FakeLLM` implements `plan()`; the OpenAI-compatible client reports
+        `tool_calls` through `stream_turn()` and the same `execute_action` seam runs
+        them (see `loop.py`).
         """
         return detect_action(message)
 

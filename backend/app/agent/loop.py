@@ -7,7 +7,13 @@ from collections.abc import AsyncIterator, Sequence
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.agent.actions import execute_action
+from app.agent.actions import (
+    ACTION_ABSENCE_CONFIRM,
+    AgentAction,
+    execute_action,
+    execute_tool_call,
+    is_confirmation,
+)
 from app.agent.base import (
     AgentContext,
     AgentEvent,
@@ -16,6 +22,7 @@ from app.agent.base import (
     ContactSnapshot,
     KbSnippet,
     LLMClient,
+    ToolCall,
     split_chunks,
 )
 from app.agent.tools import TOOL_SCHEMAS
@@ -124,12 +131,19 @@ class Agent:
         session: AsyncSession | None = None,
         user: User | None = None,
     ) -> AsyncIterator[AgentEvent]:
+        # Confirmation is policy, not model output: «подтверждаю» always targets the
+        # caller's own latest draft. Handling it before the LLM keeps both paths
+        # identical and saves a token round-trip on the OpenAI path.
+        if session is not None and user is not None and is_confirmation(message):
+            result = await execute_action(session, user, AgentAction(ACTION_ABSENCE_CONFIRM, {}))
+            yield AgentEvent(kind="tool_call", data={**result.data, "tool": "absence_confirm"})
+            for chunk in split_chunks(result.text):
+                yield AgentEvent(kind="token", text=chunk)
+            yield AgentEvent(kind="done", data={"sources": []})
+            return
+
         turns = [*history[-MAX_HISTORY_TURNS:], ChatTurn(role="user", content=message)]
         # Both clients get the tool schemas (they mirror `mcp_server/tools.py` one-to-one).
-        # Scaffold limitation: only `FakeLLM.plan()` actions are executed below. The
-        # OpenAI-compatible client's streamed `tool_calls` are passed to the provider but
-        # not yet fed back as role="tool" turns — wiring that to the MCP client is the
-        # remaining step, and it would call the same `execute_action` seam.
         tools = TOOL_SCHEMAS
         query = message
         if history and _needs_history(message):
@@ -145,6 +159,41 @@ class Agent:
             yield AgentEvent(kind="tool_call", data=result.data)
             for chunk in split_chunks(result.text):
                 yield AgentEvent(kind="token", text=chunk)
+            yield AgentEvent(
+                kind="done", data={"sources": [s.as_source() for s in unique_sources(sources)]}
+            )
+            return
+
+        # Tool loop for the OpenAI-compatible path: stream text, collect the model's
+        # tool calls, then run them through the services layer and answer with the
+        # deterministic result. An answer is never blank just because the model
+        # emitted a tool call instead of prose.
+        tool_stream = getattr(self.llm, "stream_turn", None)
+        if tool_stream is not None and session is not None and user is not None:
+            calls: list[ToolCall] = []
+            async for event in tool_stream(turns, context, tools, sources):
+                if event.kind == "token" and event.text:
+                    yield AgentEvent(kind="token", text=event.text)
+                elif event.kind == "tool_call" and event.tool_call is not None:
+                    calls.append(event.tool_call)
+
+            if calls:
+                results = []
+                for call in calls:
+                    result = await execute_tool_call(session, user, call)
+                    results.append((call, result))
+                    yield AgentEvent(
+                        kind="tool_call",
+                        data={
+                            "tool": call.name,
+                            "call_id": call.call_id,
+                            "arguments": call.arguments,
+                            **result.data,
+                        },
+                    )
+                summary = "\n\n".join(result.text for _, result in results)
+                for chunk in split_chunks(summary):
+                    yield AgentEvent(kind="token", text=chunk)
             yield AgentEvent(
                 kind="done", data={"sources": [s.as_source() for s in unique_sources(sources)]}
             )

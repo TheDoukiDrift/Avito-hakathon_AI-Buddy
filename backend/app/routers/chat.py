@@ -8,7 +8,7 @@ from fastapi import APIRouter, Depends
 from fastapi.responses import StreamingResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.agent import Agent, ChatTurn, build_context, build_llm
+from app.agent import Agent, ChatTurn, LLMClient, build_context, get_llm
 from app.config import get_settings
 from app.db import get_session, get_session_factory
 from app.deps import get_current_user
@@ -35,6 +35,7 @@ async def chat_stream(
     payload: ChatRequest,
     user: User = Depends(get_current_user),
     session: AsyncSession = Depends(get_session),
+    llm: LLMClient = Depends(get_llm),
 ):
     # Persist the question and build the context before the stream starts, so the
     # first byte is not blocked by a DB round-trip inside the generator.
@@ -56,9 +57,10 @@ async def chat_stream(
     user_id = user.id
 
     async def event_stream():
-        agent = Agent(build_llm(get_settings()))
+        agent = Agent(llm)
         parts: list[str] = []
         sources: list[dict] = []
+        tool_calls: list[dict] = []
         # A dedicated session: the request-scoped one may already be closed by the time
         # the generator runs, and tool actions commit on their own.
         async with get_session_factory()() as agent_session:
@@ -74,7 +76,9 @@ async def chat_stream(
                         parts.append(event.text)
                         yield _sse({"token": event.text})
                     elif event.kind == "tool_call":
-                        yield _sse({"tool_call": event.data})
+                        if event.data:
+                            tool_calls.append(event.data)
+                            yield _sse({"tool_call": event.data})
                     elif event.kind == "done" and event.data:
                         sources = event.data.get("sources") or []
             except Exception as exc:  # noqa: BLE001 - never break the stream silently
@@ -90,6 +94,7 @@ async def chat_stream(
                     conversation_row,
                     MessageRole.assistant,
                     answer,
+                    tool_calls=tool_calls or None,
                     sources=sources,
                 )
                 await audit.log(
@@ -100,6 +105,7 @@ async def chat_stream(
                         "chars": len(answer),
                         "llm": "api" if get_settings().llm_enabled else "fake",
                         "sources": [source.get("title") for source in sources],
+                        "tools": [call.get("tool") for call in tool_calls],
                     },
                 )
                 await persist_session.commit()
