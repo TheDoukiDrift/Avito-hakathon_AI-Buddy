@@ -93,9 +93,13 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      # Версия pnpm берётся из package.json -> packageManager (pnpm@12.18.0),
-      # чтобы CI и Dockerfile (corepack) не расходились.
+      # Версия pnpm должна совпадать с frontend/package.json -> packageManager
+      # (pnpm@12.18.0) и Dockerfile (corepack), иначе CI и образ разъедутся.
+      # Указываем явно: action-setup по умолчанию читает package.json из корня
+      # репозитория, а packageManager лежит во frontend/package.json.
       - uses: pnpm/action-setup@v4
+        with:
+          version: 12.18.0
 
       - uses: actions/setup-node@v4
         with:
