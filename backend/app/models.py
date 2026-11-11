@@ -207,6 +207,31 @@ class KbDocument(Base):
     keywords: Mapped[str] = mapped_column(Text, nullable=False, default="")
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
 
+    chunks: Mapped[list[KbChunk]] = relationship(
+        back_populates="document",
+        cascade="all, delete-orphan",
+        order_by="KbChunk.chunk_index",
+    )
+
+
+class KbChunk(Base):
+    """A heading/paragraph-sized piece of a `KbDocument` — the retrieval unit."""
+
+    __tablename__ = "kb_chunks"
+    __table_args__ = (UniqueConstraint("doc_id", "chunk_index", name="uq_kb_chunks_doc_index"),)
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    doc_id: Mapped[int] = mapped_column(
+        ForeignKey("kb_documents.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    chunk_index: Mapped[int] = mapped_column(Integer, nullable=False)
+    # The document title, repeated on every chunk so a retrieved fragment is
+    # self-describing out of context (and citations stay stable).
+    title: Mapped[str] = mapped_column(String(255), nullable=False)
+    content: Mapped[str] = mapped_column(Text, nullable=False)
+
+    document: Mapped[KbDocument] = relationship(back_populates="chunks")
+
 
 class AuditEvent(Base):
     __tablename__ = "audit_events"

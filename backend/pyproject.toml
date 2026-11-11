@@ -16,6 +16,7 @@ branch = false
 source = ["app", "mcp_server"]
 omit = [
     "app/seeds.py",
+    "app/kb/seed_kb.py",
     "alembic/*",
 ]
 

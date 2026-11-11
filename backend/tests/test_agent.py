@@ -12,11 +12,13 @@ from app.agent import (
     ChecklistSnapshot,
     ContactSnapshot,
     FakeLLM,
+    KbSnippet,
     OpenAICompatibleClient,
     build_context,
     build_llm,
 )
 from app.agent import fake as fake_module
+from app.agent.loop import relevant_sources, unique_sources
 from app.config import Settings
 from app.models import Role
 from tests.conftest import INTERN, auth_headers
@@ -59,6 +61,37 @@ def test_routing_keyword_returns_contacts():
 def test_default_answer_points_at_knowledge_base():
     text = fake_module.answer("расскажи про графану", _context())
     assert "базе знаний" in text
+
+
+def test_rag_sources_win_over_keyword_shortcuts():
+    snippet = KbSnippet(
+        title="Процедура отгула по ТК РФ",
+        source_url="https://example.test/otgul",
+        content="Процедура отгула по ТК РФ. Откройте сервис и создайте черновик заявки.",
+        score=3.0,
+    )
+    text = fake_module.answer("как оформить отгул", _context(), [snippet])
+    assert "— по материалу «Процедура отгула по ТК РФ»." in text
+    assert "черновик" in text
+
+
+def test_unique_sources_keeps_one_entry_per_document():
+    snippets = [
+        KbSnippet(title="A", source_url="u", score=2.0),
+        KbSnippet(title="A", source_url="u", score=1.5),
+        KbSnippet(title="B", source_url="u", score=1.0),
+    ]
+    assert [snippet.title for snippet in unique_sources(snippets)] == ["A", "B"]
+
+
+def test_relevant_sources_drops_weak_foreign_documents():
+    snippets = [
+        KbSnippet(title="A", source_url="u", score=5.0),
+        KbSnippet(title="A", source_url="u", score=1.0),
+        KbSnippet(title="B", source_url="u", score=1.5),
+    ]
+    kept = relevant_sources(snippets)
+    assert [(snippet.title, snippet.score) for snippet in kept] == [("A", 5.0), ("A", 1.0)]
 
 
 def test_checklist_answer_without_items():

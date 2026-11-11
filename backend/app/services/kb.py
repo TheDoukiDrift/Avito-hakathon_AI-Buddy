@@ -1,90 +1,59 @@
-"""Knowledge base retrieval for the RAG scenario.
+"""Knowledge-base retrieval for the RAG scenario.
 
-Honest, deliberately small: no embeddings, no vector store. Documents are seeded
-synthetically and ranked by keyword overlap — enough for the prototype to show a
-real retrieve-then-answer path and to return `sources` the UI can display.
-Swapping in pgvector later means replacing `search()` only.
+Documents are ingested from `backend/kb_docs/*.md` into `kb_documents`, split into
+`kb_chunks` (see `app.kb.ingest`) and ranked with BM25 (see `app.kb.retrieval`).
+No embeddings and no vector store: the prototype must run offline, and BM25 is
+the honest fallback PLAN §5 names. Swapping in pgvector later means replacing
+`search()` only.
 """
 
 from __future__ import annotations
 
-import re
+from dataclasses import dataclass, replace
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models import KbDocument
-
-# Russian is heavily inflected ("отгул"/"отгула"/"отгуле"), so compare stems:
-# keep the first N characters of a word instead of shipping a stemmer.
-_STEM_LENGTH = 5
-_MIN_WORD_LENGTH = 4
-_WORD_RE = re.compile(r"[\w-]+", re.UNICODE)
+from app.kb.retrieval import rank_chunks
+from app.models import KbChunk, KbDocument
 
 
-def _stem(word: str) -> str:
-    return word.lower()[:_STEM_LENGTH]
+@dataclass(frozen=True)
+class Source:
+    """A retrieved chunk as the agent and the UI see it."""
+
+    title: str
+    source_url: str
+    content: str
+    doc_id: int
+    chunk_index: int
+    score: float = 0.0
+
+    def as_source(self) -> dict[str, str]:
+        return {"title": self.title, "source_url": self.source_url}
 
 
-def query_terms(query: str) -> set[str]:
-    """Significant word stems of a question, minus common Russian stop words."""
-    terms = set()
-    for word in _WORD_RE.findall(query.lower()):
-        if len(word) < _MIN_WORD_LENGTH or word in STOP_WORDS:
-            continue
-        terms.add(_stem(word))
-    return terms
+async def all_chunks(session: AsyncSession) -> list[Source]:
+    """Every chunk with its document's source URL — the BM25 corpus."""
+    statement = (
+        select(KbChunk, KbDocument.source_url)
+        .join(KbDocument, KbDocument.id == KbChunk.doc_id)
+        .order_by(KbChunk.id)
+    )
+    rows = (await session.execute(statement)).all()
+    return [
+        Source(
+            title=chunk.title,
+            source_url=source_url,
+            content=chunk.content,
+            doc_id=chunk.doc_id,
+            chunk_index=chunk.chunk_index,
+        )
+        for chunk, source_url in rows
+    ]
 
 
-STOP_WORDS = frozenset(
-    {
-        "как",
-        "что",
-        "где",
-        "когда",
-        "кто",
-        "чем",
-        "мне",
-        "меня",
-        "можно",
-        "нужно",
-        "надо",
-        "это",
-        "для",
-        "про",
-        "или",
-        "если",
-        "чтобы",
-        "такое",
-        "расскажи",
-        "подскажи",
-    }
-)
-
-
-def _document_terms(document: KbDocument) -> set[str]:
-    haystack = " ".join((document.title, document.keywords, document.content))
-    return {_stem(word) for word in _WORD_RE.findall(haystack.lower()) if len(word) >= 3}
-
-
-def rank_documents(query: str, documents: list[KbDocument], limit: int = 3) -> list[KbDocument]:
-    """Pure ranking: documents sharing the most stems with the question win."""
-    terms = query_terms(query)
-    if not terms:
-        return []
-    scored: list[tuple[int, KbDocument]] = []
-    for document in documents:
-        score = len(terms & _document_terms(document))
-        if score:
-            scored.append((score, document))
-    scored.sort(key=lambda pair: (-pair[0], pair[1].id))
-    return [document for _, document in scored[:limit]]
-
-
-async def all_documents(session: AsyncSession) -> list[KbDocument]:
-    return list((await session.execute(select(KbDocument).order_by(KbDocument.id))).scalars())
-
-
-async def search(session: AsyncSession, query: str, limit: int = 3) -> list[KbDocument]:
-    """Keyword retrieval over `kb_documents` (empty list = nothing matched)."""
-    return rank_documents(query, await all_documents(session), limit)
+async def search(session: AsyncSession, query: str, limit: int = 3) -> list[Source]:
+    """Top-`limit` chunks over the relevance threshold (empty list = nothing matched)."""
+    ranked = rank_chunks(query, await all_chunks(session), limit=limit)
+    return [replace(source, score=score) for source, score in ranked]

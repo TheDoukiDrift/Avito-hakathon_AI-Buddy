@@ -92,8 +92,46 @@ def _routing_answer(context: AgentContext, text: str) -> str:
     return "\n".join(lines)
 
 
+def _excerpt(content: str, title: str, limit: int = 320) -> str:
+    """First whole sentences of a chunk, without the repeated title prefix."""
+    text = content.strip()
+    prefix = f"{title}. "
+    if text.startswith(prefix):
+        text = text[len(prefix) :]
+    if len(text) <= limit:
+        return text
+    cut = text[:limit]
+    boundary = max(cut.rfind(". "), cut.rfind("! "), cut.rfind("? "))
+    if boundary > limit // 2:
+        cut = cut[: boundary + 1]
+    return cut
+
+
+def _rag_answer(sources: Sequence[KbSnippet]) -> str:
+    """Retrieved chunks are the answer — every paragraph names its source document."""
+    grouped: dict[str, list[str]] = {}
+    order: list[str] = []
+    for source in sources:
+        excerpt = _excerpt(source.content, source.title)
+        if not excerpt:
+            continue
+        if source.title not in grouped:
+            grouped[source.title] = []
+            order.append(source.title)
+        if excerpt not in grouped[source.title]:
+            grouped[source.title].append(excerpt)
+    parts = [
+        f"{' '.join(grouped[title]).rstrip(' .')} — по материалу «{title}»." for title in order
+    ]
+    return "\n\n".join(parts) if parts else KNOWLEDGE_BASE_NOTE
+
+
 def answer(message: str, context: AgentContext, sources: Sequence[KbSnippet] = ()) -> str:
     """Rule-based answer. Pure function — the unit under test."""
+    if sources:
+        # RAG path: retrieved material wins over keyword shortcuts, so an answer
+        # always carries the document it came from.
+        return _rag_answer(sources)
     text = message.strip().lower()
     if _matches(text, ABSENCE_KEYWORDS):
         return _absence_answer(context)
@@ -101,10 +139,6 @@ def answer(message: str, context: AgentContext, sources: Sequence[KbSnippet] = (
         return _checklist_answer(context)
     if _matches(text, ROUTING_KEYWORDS):
         return _routing_answer(context, text)
-    if sources:
-        # RAG path: the retrieved document is the answer instead of the "no answer" note.
-        top = sources[0]
-        return f"{top.title}\n\n{top.content}".strip()
     return KNOWLEDGE_BASE_NOTE
 
 

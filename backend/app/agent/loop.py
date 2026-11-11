@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 from collections.abc import AsyncIterator, Sequence
 
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -25,6 +26,15 @@ from app.services import kb as kb_service
 from app.services import users as users_service
 
 MAX_HISTORY_TURNS = 20
+
+# A short or anaphoric follow-up ("а какие сроки?") carries no topic of its own, so
+# retrieval adds the previous question — that is what makes follow-ups work offline.
+_ANAPHORA_RE = re.compile(r"^\s*(а|и|но|ещё|еще|тогда|там|это)\b", re.IGNORECASE)
+
+
+def _needs_history(message: str) -> bool:
+    words = [word for word in message.split() if len(word) > 2]
+    return len(words) <= 3 or bool(_ANAPHORA_RE.match(message))
 
 
 async def build_context(session: AsyncSession, user: User) -> AgentContext:
@@ -57,13 +67,47 @@ async def build_context(session: AsyncSession, user: User) -> AgentContext:
 
 
 async def retrieve_sources(session: AsyncSession | None, message: str) -> list[KbSnippet]:
-    """Keyword retrieval over `kb_documents`; empty when there is no session/DB."""
+    """Top-ranked chunks with their scores; empty when there is no session/DB."""
     if session is None:
         return []
-    documents = await kb_service.search(session, message)
+    sources = await kb_service.search(session, message)
     return [
-        KbSnippet(title=document.title, source_url=document.source_url, content=document.content)
-        for document in documents
+        KbSnippet(
+            title=source.title,
+            source_url=source.source_url,
+            content=source.content,
+            score=source.score,
+        )
+        for source in sources
+    ]
+
+
+def unique_sources(snippets: Sequence[KbSnippet]) -> list[KbSnippet]:
+    """One entry per document for the SSE `sources` list (chunks stay for the model)."""
+    seen: set[str] = set()
+    unique: list[KbSnippet] = []
+    for snippet in snippets:
+        if snippet.title in seen:
+            continue
+        seen.add(snippet.title)
+        unique.append(snippet)
+    return unique
+
+
+def relevant_sources(snippets: Sequence[KbSnippet], ratio: float = 0.7) -> list[KbSnippet]:
+    """Keep the top document's chunks plus other documents close to the best score.
+
+    A chunk from another document far below the best hit is usually an accidental
+    word overlap; citing it would make the answer look random.
+    """
+    if not snippets:
+        return []
+    best = snippets[0].score
+    top_title = snippets[0].title
+    return [
+        snippet
+        for snippet in snippets
+        if snippet.title == top_title or snippet.score >= best * ratio
     ]
 
 
@@ -87,7 +131,12 @@ class Agent:
         # not yet fed back as role="tool" turns — wiring that to the MCP client is the
         # remaining step, and it would call the same `execute_action` seam.
         tools = TOOL_SCHEMAS
-        sources = await retrieve_sources(session, message)
+        query = message
+        if history and _needs_history(message):
+            previous = next((turn.content for turn in reversed(history) if turn.role == "user"), "")
+            if previous:
+                query = f"{previous} {message}"
+        sources = relevant_sources(await retrieve_sources(session, query))
 
         planner = getattr(self.llm, "plan", None)
         action = planner(message, context) if planner is not None and session and user else None
@@ -96,9 +145,13 @@ class Agent:
             yield AgentEvent(kind="tool_call", data=result.data)
             for chunk in split_chunks(result.text):
                 yield AgentEvent(kind="token", text=chunk)
-            yield AgentEvent(kind="done", data={"sources": [s.as_source() for s in sources]})
+            yield AgentEvent(
+                kind="done", data={"sources": [s.as_source() for s in unique_sources(sources)]}
+            )
             return
 
         async for token in self.llm.stream(turns, context, tools, sources):
             yield AgentEvent(kind="token", text=token)
-        yield AgentEvent(kind="done", data={"sources": [s.as_source() for s in sources]})
+        yield AgentEvent(
+            kind="done", data={"sources": [s.as_source() for s in unique_sources(sources)]}
+        )

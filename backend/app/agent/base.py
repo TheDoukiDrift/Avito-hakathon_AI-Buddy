@@ -62,11 +62,12 @@ class AgentEvent:
 
 @dataclass
 class KbSnippet:
-    """A retrieved knowledge-base document as the model/UI may see it."""
+    """A retrieved knowledge-base chunk as the model/UI may see it."""
 
     title: str
     source_url: str
     content: str = ""
+    score: float = 0.0
 
     def as_source(self) -> dict[str, str]:
         return {"title": self.title, "source_url": self.source_url}

@@ -12,13 +12,13 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db import dispose_engine, get_engine, get_session_factory
+from app.kb.ingest import ingest_documents
 from app.models import (
     Base,
     ChecklistItem,
     ChecklistProgress,
     ChecklistTemplate,
     Contact,
-    KbDocument,
     ProgressStatus,
     Role,
     User,
@@ -79,77 +79,6 @@ CONTACTS: list[tuple[str, str, str]] = [
     ("Иван Наставников", "наставник", "mentor@example.com"),
     ("Мария Руководителева", "руководитель", "manager@example.com"),
     ("Ольга ЭйчАр", "HR BP", "hr.bp@example.com"),
-]
-
-# (title, content, source_url, keywords) — синтетическая база знаний (ADR-01/ADR-02).
-# Содержимое намеренно короткое: прототип показывает retrieve-then-answer, а не
-# корпоративную базу. Цифр по ДМС и бенефитам нет — они вне области кейса.
-KB_DOCUMENTS: list[tuple[str, str, str, str]] = [
-    (
-        "Отгул по ТК РФ: процедура",
-        "Отгул оформляется заявкой с типом «отгул», датой и причиной. Сначала дату "
-        "согласуют с руководителем, затем заявка уходит на согласование руководителю, "
-        "при необходимости — HR BP. Черновик можно изменить или отозвать до подтверждения.",
-        "https://www.consultant.ru/document/cons_doc_LAW_34683/",
-        "отгул отгула отпроситься отсутствие заявка процедура тк рф руководитель",
-    ),
-    (
-        "Доступы Jira и Confluence",
-        "Доступы к Jira и Confluence запрашиваются в первый день: заявка на доступ, "
-        "согласование руководителя, выдача в течение рабочего дня. Пространство команды "
-        "и проект выдаёт администратор Jira, права на редактирование Confluence — владелец "
-        "пространства.",
-        "https://avito.tech/",
-        "jira confluence доступ доступы вики пространство проект права",
-    ),
-    (
-        "Чек-лист новичка: первые недели",
-        "Первая неделя — знакомство с командой, цели и план с руководителем, доступы, "
-        "техника. Вторая неделя — инструмент отслеживания прогресса. Далее регулярные "
-        "встречи 1:1 с наставником, обучение и ревью компетенций.",
-        "https://github.com/avito-tech/tech-internship",
-        "чек-лист чеклист новичок адаптация стажёр этапы неделя онбординг",
-    ),
-    (
-        "Код-стайл команды",
-        "Код-стайл фиксируется линтерами: форматтер и статический анализ в CI. "
-        "Спорные правила обсуждаются на ретро и попадают в конфиг репозитория, а не в "
-        "устные договорённости. Локальные исключения — только с комментарием в коде.",
-        "https://github.com/avito-tech/playbook",
-        "код-стайл кодстайл стиль линтер форматтер правила код",
-    ),
-    (
-        "Процесс код-ревью",
-        "Изменения проходят через merge request: автор описывает задачу и проверку, "
-        "ревьюер отвечает в течение рабочего дня, обязательный минимум — один одобряющий. "
-        "Мелкие правки допускаются после апрува, крупные — новым ревью.",
-        "https://github.com/avito-tech/playbook",
-        "ревью код-ревью ревьюер merge request мр апрув проверка изменения",
-    ),
-    (
-        "Grafana: первые шаги",
-        "Дашборды команды живут в общем пространстве Grafana. Новичку выдаётся доступ на "
-        "чтение; редактирование — через заявку на доступ к папке команды. Метрики сервиса "
-        "находятся по имени сервиса, алерты настраивает дежурный.",
-        "https://avito.tech/",
-        "grafana графана дашборд метрики мониторинг алерты дежурный",
-    ),
-    (
-        "ДМС: куда обратиться",
-        "Вопросы добровольного медицинского страхования ведёт HR BP: он подскажет "
-        "порядок обращения и список доступных опций. Конкретные условия и цифры "
-        "обсуждаются индивидуально и в базе знаний не публикуются.",
-        "https://avito.tech/",
-        "дмс страхование медицина полис врач hr",
-    ),
-    (
-        "Встречи 1:1 и обратная связь",
-        "Встречи 1:1 с наставником проходят раз в неделю: итоги недели, блокеры, "
-        "обратная связь. Конспект ведётся в общем документе команды, решения фиксируются "
-        "задачами. Просить встречу можно в любой момент, а не только по расписанию.",
-        "https://github.com/avito-tech/playbook",
-        "1:1 встреча наставник обратная связь фидбек конспект блокеры",
-    ),
 ]
 
 
@@ -234,16 +163,10 @@ async def _ensure_contacts(session: AsyncSession) -> None:
             session.add(Contact(name=name, role=role, team=TEAM, email=email))
 
 
-async def _ensure_kb_documents(session: AsyncSession) -> int:
-    existing = {row.title for row in (await session.execute(select(KbDocument))).scalars()}
-    added = 0
-    for title, content, source_url, keywords in KB_DOCUMENTS:
-        if title not in existing:
-            session.add(
-                KbDocument(title=title, content=content, source_url=source_url, keywords=keywords)
-            )
-            added += 1
-    return added
+async def _ensure_kb_documents(session: AsyncSession) -> dict[str, int]:
+    """Ingest `backend/kb_docs/*.md` into `kb_documents` + `kb_chunks` (idempotent)."""
+    report = await ingest_documents(session)
+    return report.as_dict()
 
 
 async def seed(session: AsyncSession) -> dict[str, int]:
@@ -256,14 +179,15 @@ async def seed(session: AsyncSession) -> dict[str, int]:
     items = await _ensure_items(session, template)
     await _ensure_progress(session, users["intern@example.com"], items)
     await _ensure_contacts(session)
-    await _ensure_kb_documents(session)
+    kb_report = await _ensure_kb_documents(session)
     await session.commit()
 
     return {
         "users": len(users),
         "checklist_items": len(items),
         "contacts": len(CONTACTS),
-        "kb_documents": len(KB_DOCUMENTS),
+        "kb_documents": kb_report["documents"],
+        "kb_chunks": kb_report["chunks"],
     }
 
 

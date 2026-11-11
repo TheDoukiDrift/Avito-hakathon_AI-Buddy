@@ -6,6 +6,7 @@ from app.agent.base import (
     ChatTurn,
     ChecklistSnapshot,
     ContactSnapshot,
+    KbSnippet,
     LLMClient,
 )
 from app.agent.fake import FakeLLM
@@ -34,6 +35,7 @@ __all__ = [
     "ChecklistSnapshot",
     "ContactSnapshot",
     "FakeLLM",
+    "KbSnippet",
     "LLMClient",
     "OpenAICompatibleClient",
     "TOOL_SCHEMAS",
