@@ -1,3 +1,5 @@
+import ReactMarkdown, { type Components } from 'react-markdown'
+import remarkGfm from 'remark-gfm'
 import type { ChatMessage } from '../api/schemas'
 import { formatTime } from '../utils/labels'
 
@@ -5,6 +7,23 @@ interface MessageProps {
   message: ChatMessage
   streaming?: boolean
 }
+
+/**
+ * Ссылки в ответах бадди уходят в новую вкладку.
+ * react-markdown по умолчанию вычищает опасные протоколы (javascript:, data:),
+ * поэтому rehype-raw не нужен.
+ */
+const markdownComponents: Components = {
+  a({ href, children }) {
+    return (
+      <a href={href} target="_blank" rel="noopener noreferrer">
+        {children}
+      </a>
+    )
+  },
+}
+
+const remarkPlugins = [remarkGfm]
 
 export function Message({ message, streaming = false }: MessageProps) {
   const isUser = message.role === 'user'
@@ -14,8 +33,16 @@ export function Message({ message, streaming = false }: MessageProps) {
     <article className={`message ${isUser ? 'message--user' : 'message--assistant'}`}>
       <span className="message__role">{isUser ? 'Вы' : 'Бадди'}</span>
       <div className="message__body">
-        <div className="message__text">
-          {hasContent ? message.content : null}
+        <div className={`message__text ${isUser ? '' : 'message__text--markdown'}`.trim()}>
+          {hasContent ? (
+            isUser ? (
+              message.content
+            ) : (
+              <ReactMarkdown remarkPlugins={remarkPlugins} components={markdownComponents}>
+                {message.content}
+              </ReactMarkdown>
+            )
+          ) : null}
           {streaming ? (
             <span className="blink" aria-hidden="true">
               ▋
