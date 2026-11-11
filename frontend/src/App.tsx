@@ -56,7 +56,8 @@ export default function App() {
       {/* Реквизиты документа: проект, ревизия, кейс, номер формы. */}
       <header className="doc-head">
         <span>
-          <b>AI-BUDDY</b> · REV 2026.11 · CASE AVITO · DOC 001
+          <b>AI-BUDDY</b> · REV 2026.11
+          <span className="doc-head__tail"> · CASE AVITO · DOC 001</span>
         </span>
         <span className="doc-head__spacer" />
         <span className="doc-head__user">

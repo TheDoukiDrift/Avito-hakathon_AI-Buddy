@@ -43,13 +43,14 @@ export function LoginPage() {
       {/* Реквизиты титульного листа. */}
       <header className="doc-head">
         <span>
-          <b>AI-BUDDY</b> · REV 2026.11 · CASE AVITO · DOC 001
+          <b>AI-BUDDY</b> · REV 2026.11
+          <span className="doc-head__tail"> · CASE AVITO · DOC 001</span>
         </span>
         <span className="doc-head__spacer" />
         <span className="coord">
           <b>+57.02°N</b> · 024.06°E
         </span>
-        <span>Доступ · терминал 01</span>
+        <span className="doc-head__tail">Доступ · терминал 01</span>
       </header>
 
       <section className="login__intro">

@@ -15,7 +15,7 @@ export function Sidebar() {
   const [tab, setTab] = useState<SidebarTab>('checklist')
 
   return (
-    <aside className="sidebar" aria-label="Адаптация">
+    <aside className="sidebar" aria-label="Адаптация" data-tab={tab}>
       <div className="tabs" role="tablist" aria-label="Разделы адаптации">
         {TABS.map((item) => (
           <button
@@ -31,10 +31,17 @@ export function Sidebar() {
         ))}
       </div>
 
+      {/* Все панели смонтированы: на смартфоне они идут подряд, без вкладок. */}
       <div className="sidebar__panel">
-        {tab === 'checklist' ? <ChecklistPanel /> : null}
-        {tab === 'absence' ? <AbsenceCard /> : null}
-        {tab === 'contacts' ? <ContactsList /> : null}
+        <div className="sidebar__pane" data-pane="checklist">
+          <ChecklistPanel />
+        </div>
+        <div className="sidebar__pane" data-pane="absence">
+          <AbsenceCard />
+        </div>
+        <div className="sidebar__pane" data-pane="contacts">
+          <ContactsList />
+        </div>
       </div>
     </aside>
   )

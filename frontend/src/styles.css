@@ -65,7 +65,7 @@
   /* Типографика и геометрия */
   --font: 'Monaspace Krypton', 'Courier New', monospace;
   --radius: 0; /* скруглений нет. вообще. */
-  --container: 1120px;
+  --container: 1600px;
 }
 
 /* Светлая тема: чернила polar на бумаге snow. Компоненты не меняются. */
@@ -202,8 +202,8 @@ textarea {
 /* ---------- Лист документа ---------- */
 
 .sheet {
-  width: 100%;
-  max-width: var(--container);
+  /* Текучее поле: лист занимает окно, оставляя по 24px с каждой стороны. */
+  width: min(calc(100% - 48px), var(--container));
   margin: 0 auto;
   min-height: 100vh;
   display: flex;
@@ -215,6 +215,7 @@ textarea {
 /* Экран приложения живёт в одном окне: скроллится только содержимое. */
 .sheet--app {
   height: 100vh;
+  height: 100dvh;
   overflow: hidden;
 }
 
@@ -576,7 +577,7 @@ select.field__input {
 }
 
 .display {
-  font-size: clamp(3.5rem, 9vw, 8rem);
+  font-size: clamp(3rem, 8vw, 7rem);
   font-weight: 600;
   line-height: 0.98;
   letter-spacing: 0.02em;
@@ -596,6 +597,7 @@ select.field__input {
 }
 
 .login__intro {
+  max-width: 720px;
   padding: 48px 32px 40px;
   display: flex;
   flex-direction: column;
@@ -681,6 +683,11 @@ select.field__input {
   color: var(--accent);
 }
 
+.reg__email {
+  min-width: 0;
+  word-break: break-word;
+}
+
 .reg__row {
   width: 100%;
   background: transparent;
@@ -730,7 +737,8 @@ select.field__input {
   flex: 1;
   min-height: 0;
   display: grid;
-  grid-template-columns: minmax(0, 1fr) 320px;
+  /* Чат забирает всё свободное место, сайдбар держится в 300–360px. */
+  grid-template-columns: minmax(0, 1fr) clamp(300px, 22vw, 360px);
 }
 
 /* ---------- Чат ---------- */
@@ -959,6 +967,18 @@ select.field__input {
   flex: 1;
   min-height: 0;
   overflow-y: auto;
+}
+
+/* Панели рендерятся все: на десктопе видна выбранная вкладка,
+   на смартфоне они складываются в один столбец. */
+.sidebar__pane {
+  display: none;
+}
+
+.sidebar[data-tab='checklist'] .sidebar__pane[data-pane='checklist'],
+.sidebar[data-tab='absence'] .sidebar__pane[data-pane='absence'],
+.sidebar[data-tab='contacts'] .sidebar__pane[data-pane='contacts'] {
+  display: block;
 }
 
 .panel {
@@ -1257,44 +1277,209 @@ select.field__input {
 
 /* ---------- Адаптив ---------- */
 
-@media (max-width: 900px) {
+/* Ноутбук / планшет в альбоме: две колонки сохраняются, сайдбар уже,
+   поля плотнее. */
+@media (max-width: 1200px) {
   .workspace {
-    grid-template-columns: minmax(0, 1fr);
-    grid-template-rows: minmax(0, 1fr) auto;
-    overflow-y: auto;
+    grid-template-columns: minmax(0, 1fr) 288px;
   }
 
-  .sidebar {
-    border-left: 0;
-    border-top: 1px solid var(--line);
-    max-height: 52vh;
+  .doc-head,
+  .doc-foot {
+    padding-left: 24px;
+    padding-right: 24px;
   }
 
   .chat__head,
   .chat__messages,
   .chat__hint {
-    padding-left: 20px;
-    padding-right: 20px;
+    padding-left: 24px;
+    padding-right: 24px;
   }
 
   .chat .inline-error {
-    margin-left: 20px;
-    margin-right: 20px;
+    margin-left: 24px;
+    margin-right: 24px;
   }
 
+  .panel {
+    padding: 16px 16px 24px;
+  }
+
+  .login__intro {
+    padding: 36px 24px 32px;
+  }
+
+  .login__col {
+    padding: 26px 24px;
+  }
+}
+
+/* Смартфон: один столбец — чат, чек-лист, заявки, контакты. */
+@media (max-width: 768px) {
+  body {
+    font-size: 12px;
+    overflow-x: hidden;
+  }
+
+  .sheet {
+    width: 100%;
+    border-left: 0;
+    border-right: 0;
+  }
+
+  .sheet--app {
+    height: auto;
+    min-height: 100dvh;
+    overflow: visible;
+  }
+
+  /* Реквизиты — одна короткая строка, координаты убираем. */
   .doc-head,
   .doc-foot {
-    padding-left: 20px;
-    padding-right: 20px;
+    padding: 9px 16px;
+    gap: 6px 10px;
+    font-size: 9px;
+    letter-spacing: 0.12em;
+  }
+
+  .doc-head {
+    flex-wrap: nowrap;
+  }
+
+  .doc-head__tail,
+  .doc-head .coord,
+  .doc-foot .status-line {
+    display: none;
+  }
+
+  .doc-head__user {
+    min-width: 0;
+    overflow: hidden;
+    white-space: nowrap;
+    text-overflow: ellipsis;
+  }
+
+  .doc-head .button {
+    padding: 6px 10px;
+  }
+
+  .doc-foot {
+    flex-wrap: nowrap;
+    justify-content: space-between;
+  }
+
+  /* Каркас: страница скроллится целиком, секции идут друг под другом. */
+  .workspace {
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+    overflow: visible;
+  }
+
+  .chat {
+    flex: 0 0 auto;
+  }
+
+  .chat__messages {
+    overflow-y: visible;
+  }
+
+  .chat__head,
+  .chat__messages,
+  .chat__hint {
+    padding-left: 16px;
+    padding-right: 16px;
+  }
+
+  .chat .inline-error {
+    margin-left: 16px;
+    margin-right: 16px;
+  }
+
+  .chat__composer {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .chat__input {
+    border-right: 0;
+    border-bottom: 1px solid var(--line);
+  }
+
+  .chat__send {
+    padding: 12px 16px;
+  }
+
+  .chat__suggestions {
+    grid-template-columns: minmax(0, 1fr);
   }
 
   .message {
-    grid-template-columns: 64px minmax(0, 1fr);
-    gap: 10px;
+    grid-template-columns: minmax(0, 1fr);
+    gap: 4px;
+    padding: 12px 0 12px 10px;
+  }
+
+  .message__text {
+    font-size: 12px;
+  }
+
+  /* Сайдбар: вкладки не нужны, все панели видны подряд. */
+  .sidebar {
+    border-left: 0;
+    border-top: 1px solid var(--line);
+    max-height: none;
+  }
+
+  .tabs {
+    display: none;
+  }
+
+  .sidebar__panel {
+    overflow: visible;
+  }
+
+  .sidebar[data-tab] .sidebar__pane[data-pane] {
+    display: block;
+  }
+
+  .sidebar__pane + .sidebar__pane {
+    border-top: 1px solid var(--line);
+  }
+
+  .panel {
+    padding: 16px 16px 24px;
+  }
+
+  .sec-title {
+    font-size: clamp(1.15rem, 5.5vw, 1.5rem);
+  }
+
+  .sec-head--sm .sec-title {
+    font-size: 11px;
+  }
+
+  /* Титульный лист. */
+  .display {
+    font-size: clamp(2.5rem, 14vw, 4rem);
+  }
+
+  .login__intro {
+    max-width: none;
+    padding: 24px 16px 20px;
+    gap: 16px;
+  }
+
+  .login__features li {
+    font-size: 11px;
   }
 
   .login__grid {
     grid-template-columns: minmax(0, 1fr);
+  }
+
+  .login__col {
+    padding: 20px 16px;
   }
 
   .login__col + .login__col {
@@ -1302,11 +1487,48 @@ select.field__input {
     border-top: 1px solid var(--line);
   }
 
-  .login__intro {
-    padding: 32px 20px 28px;
+  /* Реестр демо-доступов: строка остаётся пальцевой целью. */
+  .reg__head,
+  .reg__row {
+    gap: 8px;
   }
 
-  .login__col {
-    padding: 24px 20px;
+  .reg__row {
+    min-height: 44px;
+    align-items: center;
+    padding: 6px 2px;
+  }
+
+  .reg__row .reg__dots {
+    align-self: center;
+  }
+
+  /* Поля и кнопки — во всю ширину; 16px не даёт iOS зумить форму. */
+  .field__input,
+  .chat__input {
+    font-size: 16px;
+  }
+
+  .login__form .button,
+  .absence-form .button,
+  .absence-draft__actions .button {
+    width: 100%;
+  }
+
+  .absence-form__dates {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .absence-draft__actions {
+    flex-direction: column;
+  }
+
+  .absence-draft__row {
+    flex-wrap: wrap;
+  }
+
+  .contacts__email {
+    word-break: break-all;
   }
 }
+
