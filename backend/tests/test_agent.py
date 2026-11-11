@@ -184,6 +184,50 @@ async def test_openai_client_surfaces_http_errors():
             [chunk async for chunk in client.stream([ChatTurn("user", "hi")], _context())]
 
 
+async def test_openai_client_accepts_retrieved_sources():
+    """The agent loop passes retrieved KB chunks as a 4th positional arg (see loop.py)."""
+    seen: dict = {}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen.update(json.loads(request.content))
+        body = 'data: {"choices":[{"delta":{"content":"ok"}}]}\n\ndata: [DONE]\n\n'
+        return httpx.Response(200, text=body)
+
+    transport = httpx.MockTransport(handler)
+    sources = [KbSnippet(title="Отгул", source_url="https://kb/otgul", content="Заявка в HR.")]
+    async with httpx.AsyncClient(transport=transport) as http_client:
+        client = OpenAICompatibleClient(
+            base_url="https://llm.example/v1", api_key="k", model="m", client=http_client
+        )
+        chunks = [
+            chunk
+            async for chunk in client.stream([ChatTurn("user", "отгул")], _context(), None, sources)
+        ]
+    assert "".join(chunks) == "ok"
+    system = seen["messages"][0]["content"]
+    assert "Отгул" in system and "https://kb/otgul" in system
+
+
+async def test_openai_client_skips_empty_choice_chunks():
+    body = (
+        'data: {"choices":[],"usage":{"total_tokens":1}}\n\n'
+        'data: {"choices":[{"delta":{"content":"При"}}]}\n\n'
+        'data: {"choices":[{"delta":{},"finish_reason":"stop"}]}\n\n'
+        "data: [DONE]\n\n"
+    )
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, text=body)
+
+    transport = httpx.MockTransport(handler)
+    async with httpx.AsyncClient(transport=transport) as http_client:
+        client = OpenAICompatibleClient(
+            base_url="https://llm.example/v1", api_key="k", model="m", client=http_client
+        )
+        chunks = [chunk async for chunk in client.stream([ChatTurn("user", "hi")], _context())]
+    assert "".join(chunks) == "При"
+
+
 async def test_build_context_reads_services(client):
     from app.db import get_session_factory
     from app.services import users as users_service

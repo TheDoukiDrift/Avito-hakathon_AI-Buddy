@@ -12,7 +12,7 @@ from typing import Any
 
 import httpx
 
-from app.agent.base import AgentContext, ChatTurn
+from app.agent.base import AgentContext, ChatTurn, KbSnippet
 
 SYSTEM_PROMPT = (
     "Ты — AI-buddy, помощник адаптации стажёров Авито. Отвечай кратко, по-русски, "
@@ -51,12 +51,21 @@ class OpenAICompatibleClient:
         messages: Sequence[ChatTurn],
         context: AgentContext,
         tools: Sequence[dict[str, Any]] | None = None,
+        sources: Sequence[KbSnippet] = (),
     ) -> dict[str, Any]:
         role_label = context.role.value
         system = (
             f"{SYSTEM_PROMPT}\n\nПользователь: {context.full_name} (роль: {role_label}). "
             f"Чек-лист: {context.done_count}/{len(context.checklist)} выполнено."
         )
+        if sources:
+            knowledge = "\n\n".join(
+                f"[{snippet.title} — {snippet.source_url}]\n{snippet.content}".strip()
+                for snippet in sources
+            )
+            system += (
+                "\n\nФрагменты базы знаний (опирайся на них и ссылайся на источник):\n" + knowledge
+            )
         payload: dict[str, Any] = {
             "model": self.model,
             "stream": True,
@@ -73,8 +82,9 @@ class OpenAICompatibleClient:
         messages: Sequence[ChatTurn],
         context: AgentContext,
         tools: Sequence[dict[str, Any]] | None = None,
+        sources: Sequence[KbSnippet] = (),
     ) -> AsyncIterator[str]:
-        payload = self.build_payload(messages, context, tools)
+        payload = self.build_payload(messages, context, tools, sources)
         client = self._client or httpx.AsyncClient(timeout=self._timeout)
         owns_client = self._client is None
         try:
@@ -92,7 +102,11 @@ class OpenAICompatibleClient:
                         chunk = json.loads(data)
                     except json.JSONDecodeError:  # pragma: no cover - provider noise
                         continue
-                    delta = chunk.get("choices", [{}])[0].get("delta", {})
+                    choices = chunk.get("choices") or []
+                    if not choices:
+                        # Providers emit usage/heartbeat chunks with an empty choices list.
+                        continue
+                    delta = choices[0].get("delta") or {}
                     content = delta.get("content")
                     if content:
                         yield content
