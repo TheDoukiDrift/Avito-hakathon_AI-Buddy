@@ -206,6 +206,18 @@ describe('HTTP-клиент', () => {
     expect(api.getToken()).toBeNull()
   })
 
+  it('на 401 при входе сообщает о неверной паре и не разлогинивает', async () => {
+    const handler = vi.fn()
+    api.setUnauthorizedHandler(handler)
+    fetchMock.mockResolvedValueOnce(new Response('', { status: 401 }))
+
+    await expect(api.login('a@b.ru', 'bad-password')).rejects.toMatchObject({
+      status: 401,
+      message: 'Неверная почта или пароль.',
+    })
+    expect(handler).not.toHaveBeenCalled()
+  })
+
   it('оборачивает сетевую ошибку и неожиданный ответ', async () => {
     fetchMock.mockRejectedValueOnce(new TypeError('network down'))
     await expect(api.fetchMe()).rejects.toMatchObject({ status: 0 })

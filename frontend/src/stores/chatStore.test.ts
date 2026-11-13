@@ -51,7 +51,7 @@ describe('chatStore.sendMessage', () => {
     expect(state.messages[1]?.content).toBe('Не удалось получить ответ. Попробуйте ещё раз.')
   })
 
-  it('дописывает fallback к уже полученным токенам', async () => {
+  it('сохраняет уже полученные токены и не дописывает fallback в текст', async () => {
     streamChat.mockImplementation(async (_message, onToken) => {
       onToken('Начало ответа')
       throw new Error('stream broke')
@@ -59,9 +59,8 @@ describe('chatStore.sendMessage', () => {
 
     await useChatStore.getState().sendMessage('Привет')
 
-    expect(useChatStore.getState().messages[1]?.content).toBe(
-      'Начало ответа\n\nНе удалось получить ответ. Попробуйте ещё раз.',
-    )
+    expect(useChatStore.getState().messages[1]?.content).toBe('Начало ответа')
+    expect(useChatStore.getState().error).toBe('stream broke')
   })
 
   it('игнорирует пустой ввод и повторную отправку во время стрима', async () => {

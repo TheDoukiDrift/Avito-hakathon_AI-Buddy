@@ -1,5 +1,7 @@
 import { useEffect, useRef, useState, type FormEvent, type KeyboardEvent } from 'react'
 import { useChatStore } from '../stores/chatStore'
+import { InlineError } from './InlineError'
+import { LoadingLine } from './LoadingLine'
 import { Message } from './Message'
 
 const SUGGESTIONS = [
@@ -10,6 +12,7 @@ const SUGGESTIONS = [
 
 export function Chat() {
   const messages = useChatStore((state) => state.messages)
+  const historyLoaded = useChatStore((state) => state.historyLoaded)
   const sending = useChatStore((state) => state.sending)
   const loadingHistory = useChatStore((state) => state.loadingHistory)
   const error = useChatStore((state) => state.error)
@@ -17,15 +20,18 @@ export function Chat() {
   const sendMessage = useChatStore((state) => state.sendMessage)
 
   const [draft, setDraft] = useState('')
-  const bottomRef = useRef<HTMLDivElement>(null)
+  const scrollRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
     void loadHistory()
   }, [loadHistory])
 
+  // Прокрутка мгновенная: во время стрима плавный скролл отстаёт от текста.
   useEffect(() => {
-    bottomRef.current?.scrollIntoView({ behavior: 'smooth', block: 'end' })
-  }, [messages, sending])
+    const node = scrollRef.current
+    if (!node) return
+    node.scrollTop = node.scrollHeight
+  }, [messages, sending, error])
 
   const submit = (event?: FormEvent<HTMLFormElement>) => {
     event?.preventDefault()
@@ -47,6 +53,21 @@ export function Chat() {
     void sendMessage(text)
   }
 
+  const lastUserMessage = messages.reduce<string | null>(
+    (acc, message) => (message.role === 'user' ? message.content : acc),
+    null,
+  )
+
+  // Повтор после обрыва: сначала пробуем догрузить историю, иначе повторяем
+  // последний вопрос — частичный ответ остаётся на месте.
+  const retry = () => {
+    if (!historyLoaded) {
+      void loadHistory()
+      return
+    }
+    if (lastUserMessage && !sending) void sendMessage(lastUserMessage)
+  }
+
   return (
     <section className="chat" aria-label="Чат с бадди">
       <div className="chat__head">
@@ -63,12 +84,14 @@ export function Chat() {
         <p className="chat__subtitle">Бадди отвечает о процессах, инструментах и адаптации</p>
       </div>
 
-      <div className="chat__messages" aria-live="polite">
+      <div className="chat__messages" aria-live="polite" ref={scrollRef}>
         {loadingHistory && messages.length === 0 ? (
-          <p className="chat__placeholder">Загружаем историю диалога…</p>
+          <div className="chat__placeholder">
+            <LoadingLine label="Загружаем историю" />
+          </div>
         ) : null}
 
-        {!loadingHistory && messages.length === 0 ? (
+        {!loadingHistory && !error && messages.length === 0 ? (
           <div className="chat__empty">
             <p className="chat__empty-title">Привет! Я бадди — помогу освоиться.</p>
             <p className="chat__empty-text">
@@ -97,15 +120,9 @@ export function Chat() {
             streaming={sending && index === messages.length - 1 && message.role === 'assistant'}
           />
         ))}
-
-        <div ref={bottomRef} />
       </div>
 
-      {error ? (
-        <p className="inline-error" role="alert">
-          {error}
-        </p>
-      ) : null}
+      {error ? <InlineError message={error} onRetry={retry} /> : null}
 
       <form className="chat__composer" onSubmit={submit}>
         <textarea

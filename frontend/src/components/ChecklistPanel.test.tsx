@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import { render, screen } from '@testing-library/react'
+import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import * as api from '../api/client'
 import type { ChecklistResponse } from '../api/schemas'
@@ -70,5 +70,37 @@ describe('ChecklistPanel', () => {
     renderPanel()
 
     expect(await screen.findByRole('alert')).toHaveTextContent('Сервис недоступен.')
+  })
+
+  it('повторяет загрузку по кнопке «ПОВТОРИТЬ»', async () => {
+    vi.mocked(api.getChecklist)
+      .mockRejectedValueOnce(new Error('Сервис недоступен.'))
+      .mockResolvedValueOnce(checklist)
+    renderPanel()
+
+    const alert = await screen.findByRole('alert')
+    expect(alert).toHaveTextContent('Ошибка загрузки: Сервис недоступен.')
+
+    fireEvent.click(screen.getByRole('button', { name: 'ПОВТОРИТЬ' }))
+
+    await waitFor(() => expect(api.getChecklist).toHaveBeenCalledTimes(2))
+    expect(await screen.findByText('Выполнено 1 из 3')).toBeInTheDocument()
+  })
+
+  it('заменяет плашку следующего шага инверсной «АДАПТАЦИЯ ПРОЙДЕНА»', async () => {
+    const doneChecklist: ChecklistResponse = {
+      items: checklist.items.map((item) => ({ ...item, status: 'done' })),
+      next_item: null,
+      done_count: 3,
+      total: 3,
+    }
+    vi.mocked(api.getChecklist).mockResolvedValue(doneChecklist)
+    renderPanel()
+
+    const plate = await screen.findByLabelText('Адаптация пройдена')
+
+    expect(plate).toHaveTextContent('АДАПТАЦИЯ ПРОЙДЕНА')
+    expect(plate).toHaveTextContent('3 из 3')
+    expect(screen.queryByLabelText('Следующий шаг')).not.toBeInTheDocument()
   })
 })

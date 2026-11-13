@@ -1,6 +1,8 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import * as api from '../api/client'
+import { describeError } from '../utils/errors'
 import { formatDate, formatTime } from '../utils/labels'
+import { InlineError } from './InlineError'
 
 /**
  * Секция «05 — НАПОМИНАНИЯ»: что AI-крон оставил пользователю по чек-листу.
@@ -23,15 +25,10 @@ export function RemindersPanel() {
   })
 
   const reminders = remindersQuery.data ?? []
-  const loadError =
-    remindersQuery.error instanceof Error
-      ? remindersQuery.error.message
-      : remindersQuery.isError
-        ? 'Не удалось загрузить напоминания.'
-        : null
 
   // Нет данных — нет секции: пустой блок в сайдбаре только шумит.
-  if (reminders.length === 0 && !loadError) return null
+  // Ошибка загрузки — исключение: её показываем, даже если список пуст.
+  if (reminders.length === 0 && !remindersQuery.isError) return null
 
   return (
     <section className="panel panel--reminders" aria-label="Напоминания">
@@ -42,10 +39,11 @@ export function RemindersPanel() {
         <span className="panel__percent">{reminders.length}</span>
       </div>
 
-      {loadError ? (
-        <p className="inline-error" role="alert">
-          {loadError}
-        </p>
+      {remindersQuery.isError ? (
+        <InlineError
+          message={describeError(remindersQuery.error, 'не удалось загрузить напоминания')}
+          onRetry={() => void remindersQuery.refetch()}
+        />
       ) : null}
 
       <ul className="reminders">
@@ -73,11 +71,14 @@ export function RemindersPanel() {
       </ul>
 
       {ackMutation.isError ? (
-        <p className="inline-error" role="alert">
-          {ackMutation.error instanceof Error
-            ? ackMutation.error.message
-            : 'Не удалось подтвердить напоминание.'}
-        </p>
+        <InlineError
+          prefix="Ошибка"
+          message={describeError(ackMutation.error, 'не удалось подтвердить напоминание')}
+          onRetry={() => {
+            const id = ackMutation.variables
+            if (id) ackMutation.mutate(id)
+          }}
+        />
       ) : null}
     </section>
   )

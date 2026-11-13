@@ -97,6 +97,8 @@ interface RequestOptions {
   method?: 'GET' | 'POST'
   body?: unknown
   signal?: AbortSignal
+  /** Логин: 401 здесь — неверная пара, а не истёкшая сессия. */
+  unauthorizedMessage?: string
 }
 
 async function request<T>(
@@ -123,6 +125,10 @@ async function request<T>(
   }
 
   if (response.status === 401) {
+    // Логин обрабатывает 401 сам: без разлогина и чужого текста про сессию.
+    if (options.unauthorizedMessage) {
+      throw new ApiError(401, options.unauthorizedMessage)
+    }
     handleUnauthorized()
     throw new ApiError(401, 'Сессия истекла. Войдите заново.')
   }
@@ -144,6 +150,7 @@ export function login(email: string, password: string): Promise<LoginResponse> {
   return request('/auth/login', loginResponseSchema, {
     method: 'POST',
     body: { email, password },
+    unauthorizedMessage: 'Неверная почта или пароль.',
   })
 }
 

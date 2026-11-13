@@ -8,6 +8,9 @@ import {
   formatDateRange,
   todayIso,
 } from '../utils/labels'
+import { describeError } from '../utils/errors'
+import { InlineError } from './InlineError'
+import { LoadingLine } from './LoadingLine'
 
 const ABSENCE_TYPES: AbsenceType[] = ['day_off', 'vacation', 'sick']
 
@@ -49,8 +52,7 @@ export function AbsenceCard() {
     },
   })
 
-  const handleSubmit = (event: FormEvent<HTMLFormElement>) => {
-    event.preventDefault()
+  const submitDraft = () => {
     if (!dateFrom || !dateTo) {
       setFormError('Укажите дату начала и окончания.')
       return
@@ -66,6 +68,11 @@ export function AbsenceCard() {
       date_to: dateTo,
       reason: reason.trim(),
     })
+  }
+
+  const handleSubmit = (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault()
+    submitDraft()
   }
 
   const startNew = () => {
@@ -145,17 +152,17 @@ export function AbsenceCard() {
           </label>
 
           {formError ? (
-            <p className="inline-error" role="alert">
+            <p className="inline-error inline-error--static" role="alert">
               {formError}
             </p>
           ) : null}
 
           {createMutation.isError ? (
-            <p className="inline-error" role="alert">
-              {createMutation.error instanceof Error
-                ? createMutation.error.message
-                : 'Не удалось создать черновик заявки.'}
-            </p>
+            <InlineError
+              prefix="Ошибка"
+              message={describeError(createMutation.error, 'не удалось создать черновик заявки')}
+              onRetry={submitDraft}
+            />
           ) : null}
 
           <button
@@ -195,11 +202,13 @@ export function AbsenceCard() {
                 Проверьте детали. После подтверждения заявка уйдёт руководителю, затем HR BP.
               </p>
               {confirmMutation.isError ? (
-                <p className="inline-error" role="alert">
-                  {confirmMutation.error instanceof Error
-                    ? confirmMutation.error.message
-                    : 'Не удалось отправить заявку.'}
-                </p>
+                <InlineError
+                  prefix="Ошибка"
+                  message={describeError(confirmMutation.error, 'не удалось отправить заявку')}
+                  onRetry={() => {
+                    if (draft) confirmMutation.mutate(draft.id)
+                  }}
+                />
               ) : null}
               <div className="absence-draft__actions">
                 <button
@@ -234,16 +243,17 @@ export function AbsenceCard() {
 
       <div className="absence-list">
         <h3 className="absence-list__title">Мои заявки</h3>
-        {absencesQuery.isLoading ? <p className="panel__placeholder">Загружаем заявки…</p> : null}
+        {absencesQuery.isLoading ? <LoadingLine label="Загружаем заявки" /> : null}
         {absencesQuery.isError ? (
-          <p className="inline-error" role="alert">
-            {absencesQuery.error instanceof Error
-              ? absencesQuery.error.message
-              : 'Не удалось загрузить заявки.'}
-          </p>
+          <InlineError
+            message={describeError(absencesQuery.error, 'не удалось загрузить заявки')}
+            onRetry={() => void absencesQuery.refetch()}
+          />
         ) : null}
         {absencesQuery.data && absencesQuery.data.length === 0 ? (
-          <p className="panel__placeholder">Заявок пока нет.</p>
+          <p className="panel__placeholder">
+            Заявок пока нет — спросите бадди: «оформи отгул завтра»
+          </p>
         ) : null}
         <ul className="absence-list__items">
           {(absencesQuery.data ?? []).map((absence) => {

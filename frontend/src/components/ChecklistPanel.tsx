@@ -2,6 +2,9 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import * as api from '../api/client'
 import type { ChecklistResponse } from '../api/schemas'
 import { checklistProgress, groupChecklistByWeek, nextPendingItem, weekLabel } from '../utils/checklist'
+import { describeError } from '../utils/errors'
+import { InlineError } from './InlineError'
+import { LoadingLine } from './LoadingLine'
 
 export function ChecklistPanel() {
   const queryClient = useQueryClient()
@@ -38,13 +41,7 @@ export function ChecklistPanel() {
   const done = checklistQuery.data?.done_count ?? 0
   const total = checklistQuery.data?.total ?? 0
   const percent = total === 0 ? 0 : Math.round((done / total) * 100)
-
-  const loadError =
-    checklistQuery.error instanceof Error
-      ? checklistQuery.error.message
-      : checklistQuery.isError
-        ? 'Не удалось загрузить чек-лист.'
-        : null
+  const allDone = total > 0 && done === total
 
   return (
     <section className="panel" aria-label="Чек-лист адаптации">
@@ -69,19 +66,30 @@ export function ChecklistPanel() {
         <span className="progress__bar" style={{ width: `${percent}%` }} />
       </div>
 
-      {checklistQuery.isLoading ? <p className="panel__placeholder">Загружаем чек-лист…</p> : null}
+      {checklistQuery.isLoading ? <LoadingLine /> : null}
 
-      {loadError ? (
-        <p className="inline-error" role="alert">
-          {loadError}
-        </p>
+      {checklistQuery.isError ? (
+        <InlineError
+          message={describeError(checklistQuery.error, 'не удалось загрузить чек-лист')}
+          onRetry={() => void checklistQuery.refetch()}
+        />
       ) : null}
 
-      {!checklistQuery.isLoading && !loadError && items.length === 0 ? (
+      {!checklistQuery.isLoading && !checklistQuery.isError && items.length === 0 ? (
         <p className="panel__placeholder">В чек-листе пока нет пунктов.</p>
       ) : null}
 
-      {nextItem ? (
+      {allDone ? (
+        <div className="done-plate" aria-label="Адаптация пройдена">
+          <span className="done-plate__title">АДАПТАЦИЯ ПРОЙДЕНА</span>
+          <span className="done-plate__meta">
+            {done} из {total}{' '}
+            <span className="blink" aria-hidden="true">
+              ▋
+            </span>
+          </span>
+        </div>
+      ) : nextItem ? (
         <div className="next-step" aria-label="Следующий шаг">
           <span className="next-step__label">Следующий шаг</span>
           <p className="next-step__title">{nextItem.title}</p>
@@ -95,16 +103,20 @@ export function ChecklistPanel() {
             <h3 className="checklist__week-title">{weekLabel(group.week)}</h3>
             <ul className="checklist__list">
               {group.items.map((item) => {
-                const done = item.status === 'done'
-                const pendingThisItem = completeMutation.isPending && completeMutation.variables === item.id
+                const isDone = item.status === 'done'
+                const pendingThisItem =
+                  completeMutation.isPending && completeMutation.variables === item.id
                 return (
-                  <li key={item.id} className={`checklist__item ${done ? 'checklist__item--done' : ''}`}>
+                  <li
+                    key={item.id}
+                    className={`checklist__item ${isDone ? 'checklist__item--done' : ''}`}
+                  >
                     <label className="checklist__label">
                       <input
                         type="checkbox"
                         className="checklist__checkbox"
-                        checked={done}
-                        disabled={done || pendingThisItem}
+                        checked={isDone}
+                        disabled={isDone || pendingThisItem}
                         onChange={() => completeMutation.mutate(item.id)}
                       />
                       <span className="checklist__content">
@@ -123,11 +135,14 @@ export function ChecklistPanel() {
       </div>
 
       {completeMutation.isError ? (
-        <p className="inline-error" role="alert">
-          {completeMutation.error instanceof Error
-            ? completeMutation.error.message
-            : 'Не удалось отметить пункт.'}
-        </p>
+        <InlineError
+          prefix="Ошибка"
+          message={describeError(completeMutation.error, 'не удалось отметить пункт')}
+          onRetry={() => {
+            const id = completeMutation.variables
+            if (id) completeMutation.mutate(id)
+          }}
+        />
       ) : null}
     </section>
   )

@@ -500,11 +500,59 @@ select.field__input {
 /* ---------- Статусы и ошибки ---------- */
 
 .inline-error {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 6px 12px;
   padding: 8px 10px;
+  background: var(--bg-deep);
   border: 1px solid var(--red);
   color: var(--red);
   font-size: 11px;
   letter-spacing: 0.04em;
+  line-height: 1.5;
+}
+
+.inline-error__text {
+  flex: 1 1 160px;
+  min-width: 0;
+  word-break: break-word;
+}
+
+.inline-error__retry {
+  flex: 0 0 auto;
+  padding: 2px 8px;
+  background: transparent;
+  border: 1px solid var(--red);
+  color: var(--red);
+  font-family: var(--font);
+  font-size: 9px;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  cursor: pointer;
+  transition: none;
+}
+
+.inline-error__retry:hover,
+.inline-error__retry:focus-visible {
+  background: var(--red);
+  border-color: var(--red);
+  color: var(--bg);
+  outline: none;
+}
+
+/* Ошибка валидации формы: без кнопки повтора, та же плоская рамка. */
+.inline-error--static {
+  display: block;
+}
+
+/* Строка загрузки: капс, тусклый ink, единственная анимация — курсор. */
+.loading-line {
+  font-size: 10px;
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+  color: var(--ink-dim);
 }
 
 .badge {
@@ -1033,6 +1081,7 @@ select.field__input {
   letter-spacing: 0.18em;
   text-transform: uppercase;
   color: var(--ink-dim);
+  font-variant-numeric: tabular-nums;
 }
 
 .chat .inline-error {
@@ -1210,6 +1259,32 @@ select.field__input {
   letter-spacing: 0.18em;
   text-transform: uppercase;
   color: var(--bg-deep);
+}
+
+/* Инверсная плашка «адаптация пройдена»: та же плоскость, что у next-step,
+   но перечёркивать уже нечего — только статус и курсор. */
+.done-plate {
+  padding: 12px 14px;
+  background: var(--ink);
+  border: 1px solid var(--ink);
+  color: var(--bg);
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.done-plate__title {
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.18em;
+}
+
+.done-plate__meta {
+  font-size: 9px;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: var(--bg-deep);
+  font-variant-numeric: tabular-nums;
 }
 
 /* ---------- Чек-лист ---------- */

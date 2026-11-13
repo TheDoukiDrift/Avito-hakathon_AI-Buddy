@@ -1,6 +1,9 @@
 import { useQuery } from '@tanstack/react-query'
 import * as api from '../api/client'
+import { describeError } from '../utils/errors'
 import { initials } from '../utils/labels'
+import { InlineError } from './InlineError'
+import { LoadingLine } from './LoadingLine'
 
 export function ContactsList() {
   const contactsQuery = useQuery({
@@ -17,14 +20,13 @@ export function ContactsList() {
       </div>
       <p className="panel__subtitle">Команда адаптации</p>
 
-      {contactsQuery.isLoading ? <p className="panel__placeholder">Загружаем контакты…</p> : null}
+      {contactsQuery.isLoading ? <LoadingLine /> : null}
 
       {contactsQuery.isError ? (
-        <p className="inline-error" role="alert">
-          {contactsQuery.error instanceof Error
-            ? contactsQuery.error.message
-            : 'Не удалось загрузить контакты.'}
-        </p>
+        <InlineError
+          message={describeError(contactsQuery.error, 'не удалось загрузить контакты')}
+          onRetry={() => void contactsQuery.refetch()}
+        />
       ) : null}
 
       {contactsQuery.data && contactsQuery.data.length === 0 ? (

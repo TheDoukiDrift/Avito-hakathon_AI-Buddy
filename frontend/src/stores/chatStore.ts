@@ -45,7 +45,13 @@ export const useChatStore = create<ChatState>((set, get) => ({
     set({ loadingHistory: true, error: null })
     try {
       const history = await api.fetchChatHistory()
-      set({ messages: history, historyLoaded: true, loadingHistory: false })
+      set((state) => ({
+        // Отправка могла начаться раньше ответа истории: локальные сообщения
+        // не теряем, историю кладём перед ними.
+        messages: state.messages.length > 0 ? [...history, ...state.messages] : history,
+        historyLoaded: true,
+        loadingHistory: false,
+      }))
     } catch (error) {
       set({ loadingHistory: false, error: errorText(error) })
     }
@@ -94,9 +100,9 @@ export const useChatStore = create<ChatState>((set, get) => ({
         ),
       }))
     } catch (error) {
-      patchAssistant((content) =>
-        content.trim() === '' ? FALLBACK_ANSWER : `${content}\n\n${FALLBACK_ANSWER}`,
-      )
+      // Частичный ответ сохраняем как есть: строка ошибки живёт отдельно,
+      // текст бадди не затираем и не дописываем в тело сообщения.
+      patchAssistant((content) => (content.trim() === '' ? FALLBACK_ANSWER : content))
       set({ sending: false, error: errorText(error) })
     }
   },
