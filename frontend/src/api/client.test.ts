@@ -69,6 +69,9 @@ describe('HTTP-клиент', () => {
       .mockResolvedValueOnce(
         jsonResponse({
           items: [{ id: 5, week: 1, title: 'Цели', description: '', status: 'done' }],
+          next_item: null,
+          done_count: 1,
+          total: 1,
         }),
       )
       .mockResolvedValueOnce(jsonResponse({ id: 5, week: 1, title: 'Цели', description: '', status: 'done' }))
@@ -98,9 +101,26 @@ describe('HTTP-клиент', () => {
           { id: 3, name: 'Анна Смирнова', role: 'Наставник', team: 'Core', email: 'a@b.ru' },
         ]),
       )
+      .mockResolvedValueOnce(
+        jsonResponse({
+          reminders: [
+            {
+              id: 7,
+              checklist_item_id: 5,
+              message: 'Составьте план на неделю',
+              created_at: '2026-11-10T10:00:00Z',
+            },
+          ],
+        }),
+      )
+      .mockResolvedValueOnce(jsonResponse({ id: 7, acked: true }))
 
     await expect(api.fetchChatHistory()).resolves.toHaveLength(1)
-    await expect(api.fetchChecklist()).resolves.toHaveLength(1)
+    await expect(api.getChecklist()).resolves.toMatchObject({
+      done_count: 1,
+      total: 1,
+      next_item: null,
+    })
     await expect(api.completeChecklistItem('5')).resolves.toMatchObject({ status: 'done' })
     await expect(
       api.createAbsence({
@@ -113,6 +133,8 @@ describe('HTTP-клиент', () => {
     await expect(api.confirmAbsence('9')).resolves.toMatchObject({ status: 'pending_approval' })
     await expect(api.fetchAbsences()).resolves.toEqual([])
     await expect(api.fetchContacts()).resolves.toHaveLength(1)
+    await expect(api.getReminders()).resolves.toMatchObject([{ id: '7', checklist_item_id: '5' }])
+    await expect(api.ackReminder('7')).resolves.toEqual({ id: '7', acked: true })
 
     expect(fetchMock.mock.calls.map((call) => (call as [string])[0])).toEqual([
       '/api/chat/history',
@@ -122,7 +144,24 @@ describe('HTTP-клиент', () => {
       '/api/absences/9/confirm',
       '/api/absences',
       '/api/contacts',
+      '/api/reminders',
+      '/api/reminders/7/ack',
     ])
+  })
+
+  it('оборачивает старый ответ чек-листа массивом', async () => {
+    fetchMock.mockResolvedValueOnce(
+      jsonResponse([
+        { id: 1, week: 1, title: 'Цели', description: '', status: 'done' },
+        { id: 2, week: 1, title: 'Составить план', description: '', status: 'pending' },
+      ]),
+    )
+
+    const checklist = await api.getChecklist()
+
+    expect(checklist.total).toBe(2)
+    expect(checklist.done_count).toBe(1)
+    expect(checklist.next_item).toMatchObject({ id: '2', title: 'Составить план', week: 1 })
   })
 
   it('принимает минимальные ответы по заявкам из контракта', async () => {
@@ -150,7 +189,7 @@ describe('HTTP-клиент', () => {
       jsonResponse({ detail: 'Недостаточно прав для этого действия' }, 403),
     )
 
-    await expect(api.fetchChecklist()).rejects.toMatchObject({
+    await expect(api.getChecklist()).rejects.toMatchObject({
       status: 403,
       message: 'Недостаточно прав для этого действия',
     })

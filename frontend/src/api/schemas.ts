@@ -47,10 +47,62 @@ export const checklistItemSchema = z.object({
 })
 export type ChecklistItem = z.infer<typeof checklistItemSchema>
 
-export const checklistResponseSchema = z.object({
-  items: z.array(checklistItemSchema),
+/** Бэкенд сам считает «следующий шаг» — клиент его не переопределяет. */
+export const nextChecklistItemSchema = z.object({
+  id: idSchema,
+  title: z.string().min(1),
+  week: z.coerce.number().int().nonnegative(),
 })
-export type ChecklistResponse = z.infer<typeof checklistResponseSchema>
+export type NextChecklistItem = z.infer<typeof nextChecklistItemSchema>
+
+export interface ChecklistResponse {
+  items: ChecklistItem[]
+  next_item: NextChecklistItem | null
+  done_count: number
+  total: number
+}
+
+const checklistEnvelopeSchema = z.object({
+  items: z.array(checklistItemSchema),
+  next_item: nextChecklistItemSchema.nullable().optional(),
+  done_count: z.coerce.number().int().nonnegative().optional(),
+  total: z.coerce.number().int().nonnegative().optional(),
+})
+
+/** Первый невыполненный пункт по (неделя, серверный порядок) — только для старого ответа. */
+function firstPendingItem(items: ChecklistItem[]): NextChecklistItem | null {
+  const ordered = [...items].sort((a, b) => a.week - b.week)
+  const pending = ordered.find((item) => item.status === 'pending')
+  return pending ? { id: pending.id, title: pending.title, week: pending.week } : null
+}
+
+/**
+ * Контракт отдаёт объект с метаданными прогресса, но ранние сборки бэкенда
+ * возвращали голый массив. Массив оборачиваем на клиенте, а недостающие
+ * метаданные считаем по пунктам — интерфейс обязан работать с любым из двух.
+ */
+export const checklistResponseSchema = z
+  .union([z.array(checklistItemSchema), checklistEnvelopeSchema])
+  .transform((payload): ChecklistResponse => {
+    if (Array.isArray(payload)) {
+      const done = payload.filter((item) => item.status === 'done').length
+      return {
+        items: payload,
+        next_item: firstPendingItem(payload),
+        done_count: done,
+        total: payload.length,
+      }
+    }
+
+    const done = payload.items.filter((item) => item.status === 'done').length
+    return {
+      items: payload.items,
+      next_item:
+        payload.next_item === undefined ? firstPendingItem(payload.items) : payload.next_item,
+      done_count: payload.done_count ?? done,
+      total: payload.total ?? payload.items.length,
+    }
+  })
 
 export const absenceTypeSchema = z.enum(['day_off', 'vacation', 'sick'])
 export type AbsenceType = z.infer<typeof absenceTypeSchema>
@@ -111,6 +163,26 @@ export const contactSchema = z.object({
 export type Contact = z.infer<typeof contactSchema>
 
 export const contactsSchema = z.array(contactSchema)
+
+/** Напоминание, которое AI-крон оставил пользователю по пункту чек-листа. */
+export const reminderSchema = z.object({
+  id: idSchema,
+  checklist_item_id: idSchema,
+  message: z.string().min(1),
+  created_at: z.string(),
+})
+export type Reminder = z.infer<typeof reminderSchema>
+
+export const remindersResponseSchema = z.object({
+  reminders: z.array(reminderSchema),
+})
+export type RemindersResponse = z.infer<typeof remindersResponseSchema>
+
+export const reminderAckSchema = z.object({
+  id: idSchema,
+  acked: z.boolean(),
+})
+export type ReminderAck = z.infer<typeof reminderAckSchema>
 
 export const apiErrorSchema = z.object({
   detail: z.string(),

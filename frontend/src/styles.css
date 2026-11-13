@@ -1166,11 +1166,11 @@ select.field__input {
   color: var(--ink-dim);
 }
 
-/* Шкала прогресса: деления — риски прибора, заполнение мгновенное. */
+/* Шкала прогресса: плоская, заполнение мгновенное (делений нет). */
 .progress {
   height: 6px;
   border: 1px solid var(--line);
-  background: repeating-linear-gradient(90deg, var(--line-dim) 0 1px, transparent 1px 25%);
+  background: var(--bg-deep);
 }
 
 .progress__bar {
@@ -1179,11 +1179,13 @@ select.field__input {
   background: var(--accent);
 }
 
-/* Тёплая панель — «бумажный» блок, один на экран. */
+/* Инверсная плашка «следующий шаг» — единственная инверсия на экране.
+   Плоско, моноширинно, без тени и скруглений. */
 .next-step {
   padding: 12px 14px;
-  background: var(--bg-warm);
-  border: 1px solid var(--line-warm);
+  background: var(--ink);
+  border: 1px solid var(--ink);
+  color: var(--bg);
   display: flex;
   flex-direction: column;
   gap: 4px;
@@ -1193,19 +1195,21 @@ select.field__input {
   font-size: 9px;
   letter-spacing: 0.22em;
   text-transform: uppercase;
-  color: var(--ink-dim);
+  color: var(--bg-deep);
 }
 
 .next-step__title {
   font-size: 12px;
   line-height: 1.5;
+  font-weight: 600;
+  color: var(--bg);
 }
 
 .next-step__meta {
   font-size: 9px;
   letter-spacing: 0.18em;
   text-transform: uppercase;
-  color: var(--ink-dim);
+  color: var(--bg-deep);
 }
 
 /* ---------- Чек-лист ---------- */
@@ -1284,6 +1288,57 @@ select.field__input {
 .checklist__item--done .checklist__title {
   color: var(--ink-dim);
   text-decoration: line-through;
+}
+
+/* ---------- Напоминания: строки-реестр с кнопкой «ПРИНЯЛ» ---------- */
+
+.panel--reminders {
+  padding-top: 16px;
+  border-top: 1px solid var(--line);
+}
+
+.reminders {
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+}
+
+.reminders__item {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 10px;
+  align-items: start;
+  padding: 9px 0;
+  border-bottom: 1px solid var(--line-dim);
+}
+
+.reminders__item:first-child {
+  border-top: 1px solid var(--line-dim);
+}
+
+.reminders__body {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 0;
+}
+
+.reminders__message {
+  font-size: 12px;
+  line-height: 1.5;
+  word-break: break-word;
+}
+
+.reminders__meta {
+  font-size: 9px;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--ink-dim);
+}
+
+.reminders__ack {
+  align-self: start;
+  padding: 4px 10px;
 }
 
 /* ---------- Заявки на отсутствие ---------- */

@@ -9,6 +9,8 @@ import {
   checklistResponseSchema,
   contactsSchema,
   loginResponseSchema,
+  reminderAckSchema,
+  remindersResponseSchema,
   userSchema,
   type Absence,
   type AbsenceDraftResponse,
@@ -16,8 +18,11 @@ import {
   type AbsenceType,
   type ChatMessage,
   type ChecklistItem,
+  type ChecklistResponse,
   type Contact,
   type LoginResponse,
+  type Reminder,
+  type ReminderAck,
   type User,
 } from './schemas'
 
@@ -150,12 +155,22 @@ export function fetchChatHistory(): Promise<ChatMessage[]> {
   return request('/chat/history', chatHistorySchema)
 }
 
-export function fetchChecklist(): Promise<ChecklistItem[]> {
-  return request('/checklist', checklistResponseSchema).then((data) => data.items)
+export function getChecklist(): Promise<ChecklistResponse> {
+  return request('/checklist', checklistResponseSchema)
 }
 
 export function completeChecklistItem(id: string): Promise<ChecklistItem> {
   return request(`/checklist/${encodeURIComponent(id)}/complete`, checklistItemSchema, {
+    method: 'POST',
+  })
+}
+
+export function getReminders(): Promise<Reminder[]> {
+  return request('/reminders', remindersResponseSchema).then((data) => data.reminders)
+}
+
+export function ackReminder(id: string): Promise<ReminderAck> {
+  return request(`/reminders/${encodeURIComponent(id)}/ack`, reminderAckSchema, {
     method: 'POST',
   })
 }

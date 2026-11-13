@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { AbsenceCard } from './AbsenceCard'
 import { ChecklistPanel } from './ChecklistPanel'
 import { ContactsList } from './ContactsList'
+import { RemindersPanel } from './RemindersPanel'
 
 type SidebarTab = 'checklist' | 'absence' | 'contacts'
 
@@ -35,6 +36,7 @@ export function Sidebar() {
       <div className="sidebar__panel">
         <div className="sidebar__pane" data-pane="checklist">
           <ChecklistPanel />
+          <RemindersPanel />
         </div>
         <div className="sidebar__pane" data-pane="absence">
           <AbsenceCard />
