@@ -56,21 +56,44 @@ class MessageOut(BaseModel):
 
 
 class ChecklistItemOut(BaseModel):
+    """The exact shape the frontend contract expects (S3): no extra fields."""
+
     id: int
     week: int
     title: str
     description: str | None = None
-    position: int
     status: ProgressStatus
-    completed_at: datetime | None = None
+
+
+class ChecklistNextOut(BaseModel):
+    id: int
+    title: str
+    week: int
 
 
 class ChecklistOut(BaseModel):
-    user_id: int
-    full_name: str
-    done: int
-    total: int
     items: list[ChecklistItemOut]
+    next_item: ChecklistNextOut | None = None
+    done_count: int
+    total: int
+
+
+class ReminderOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    checklist_item_id: int
+    message: str
+    created_at: datetime
+
+
+class RemindersOut(BaseModel):
+    reminders: list[ReminderOut]
+
+
+class ReminderAckOut(BaseModel):
+    id: int
+    acked: bool
 
 
 class AbsenceCreate(BaseModel):

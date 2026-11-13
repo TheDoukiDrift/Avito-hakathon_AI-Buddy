@@ -86,6 +86,13 @@ TOOL_SCHEMAS: list[dict[str, Any]] = [
         {"user_id": _USER_ID, "role": _ROLE, "query": {"type": "string"}},
         ["user_id", "role"],
     ),
+    _tool(
+        "contacts_route",
+        "Маршрутизировать вопрос: вернуть следующего по цепочке эскалации, "
+        "если база знаний не отвечает.",
+        {"user_id": _USER_ID, "role": _ROLE, "question": {"type": "string"}},
+        ["user_id", "role", "question"],
+    ),
 ]
 
 TOOL_NAMES: frozenset[str] = frozenset(schema["function"]["name"] for schema in TOOL_SCHEMAS)
@@ -99,6 +106,7 @@ TOOL_TO_ACTION: dict[str, str] = {
     "checklist_get": "checklist.get",
     "checklist_complete": "checklist.complete",
     "contacts_lookup": "contacts.lookup",
+    "contacts_route": "contacts.route",
 }
 
 _TYPE_CHECKS: dict[str, type | tuple[type, ...]] = {

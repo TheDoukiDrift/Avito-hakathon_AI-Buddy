@@ -12,9 +12,19 @@ from typing import Any
 
 from app.agent.actions import AgentAction, detect_action
 from app.agent.base import AgentContext, ChatTurn, KbSnippet, split_chunks
+from app.agent.followup import contact_line
 
 ABSENCE_KEYWORDS = ("отгул", "отпуск", "больничн", "отсутств", "отпроситься", "заявк")
-CHECKLIST_KEYWORDS = ("чек-лист", "чеклист", "этап", "шаг", "прогресс", "адаптац")
+CHECKLIST_KEYWORDS = (
+    "чек-лист",
+    "чеклист",
+    "этап",
+    "шаг",
+    "прогресс",
+    "адаптац",
+    "что дальше",
+    "следующ",
+)
 ROUTING_KEYWORDS = (
     "наставник",
     "руководител",
@@ -73,6 +83,9 @@ def _checklist_answer(context: AgentContext) -> str:
     remaining = [item.title for item in context.checklist if not item.done][:3]
     if remaining:
         lines.append("Дальше по плану: " + "; ".join(remaining) + ".")
+    if context.reminders:
+        lines.append("Просроченные напоминания:")
+        lines.extend(f"— {message}" for message in context.reminders)
     lines.append("Отметить пункт выполненным можно в разделе «Мой чек-лист».")
     return "\n".join(lines)
 
@@ -139,6 +152,9 @@ def answer(message: str, context: AgentContext, sources: Sequence[KbSnippet] = (
         return _checklist_answer(context)
     if _matches(text, ROUTING_KEYWORDS):
         return _routing_answer(context, text)
+    if context.route is not None:
+        # S4: the knowledge base had nothing — name the first person of the chain.
+        return contact_line(context.route)
     return KNOWLEDGE_BASE_NOTE
 
 

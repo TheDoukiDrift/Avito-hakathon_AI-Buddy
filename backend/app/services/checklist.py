@@ -28,9 +28,17 @@ async def _progress_map(session: AsyncSession, user_id: int) -> dict[int, Checkl
 
 
 async def get_checklist(session: AsyncSession, target: User) -> list[ChecklistEntry]:
-    """All items of the active template with the target user's progress."""
+    """All items of the active template with the target user's progress.
+
+    Ordered by `(week, position)` — the same order `next_item` (S3) promises, so the
+    REST endpoint, the MCP tool and the agent agree on "what's next".
+    """
     items = list(
-        (await session.execute(select(ChecklistItem).order_by(ChecklistItem.position))).scalars()
+        (
+            await session.execute(
+                select(ChecklistItem).order_by(ChecklistItem.week, ChecklistItem.position)
+            )
+        ).scalars()
     )
     progress = await _progress_map(session, target.id)
     entries: list[ChecklistEntry] = []
@@ -97,3 +105,11 @@ def summarize(entries: list[ChecklistEntry]) -> tuple[int, int, ChecklistEntry |
     done = sum(1 for entry in entries if entry.status is ProgressStatus.done)
     next_entry = next((e for e in entries if e.status is ProgressStatus.pending), None)
     return done, len(entries), next_entry
+
+
+def next_item(entries: list[ChecklistEntry]) -> ChecklistEntry | None:
+    """First pending item by `(week, position)` — the S3 `next_item` contract."""
+    pending = [entry for entry in entries if entry.status is ProgressStatus.pending]
+    if not pending:
+        return None
+    return min(pending, key=lambda entry: (entry.item.week, entry.item.position))

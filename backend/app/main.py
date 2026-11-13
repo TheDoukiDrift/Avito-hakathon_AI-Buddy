@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import asyncio
+import contextlib
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, Request
@@ -12,7 +14,17 @@ from app.config import get_settings
 from app.db import dispose_engine, get_engine
 from app.errors import AppError
 from app.models import Base
-from app.routers import absences, audit, auth, chat, checklist, contacts, health
+from app.routers import (
+    absences,
+    audit,
+    auth,
+    chat,
+    checklist,
+    contacts,
+    health,
+    reminders,
+)
+from app.services.reminder_cron import cron_loop
 
 
 @asynccontextmanager
@@ -21,8 +33,18 @@ async def lifespan(app: FastAPI):
     # working on a fresh checkout without a migration step.
     async with get_engine().begin() as connection:
         await connection.run_sync(Base.metadata.create_all)
-    yield
-    await dispose_engine()
+
+    # S3: the AI-cron imitation lives in the API process. It ticks once on start, then
+    # every REMINDER_INTERVAL_SEC; a failing tick is logged and the loop survives.
+    stop_event = asyncio.Event()
+    cron = asyncio.create_task(cron_loop(stop_event), name="reminder-cron")
+    try:
+        yield
+    finally:
+        stop_event.set()
+        with contextlib.suppress(asyncio.CancelledError):
+            await cron
+        await dispose_engine()
 
 
 def create_app() -> FastAPI:
@@ -56,6 +78,7 @@ def create_app() -> FastAPI:
     app.include_router(auth.router, prefix=api_prefix)
     app.include_router(chat.router, prefix=api_prefix)
     app.include_router(checklist.router, prefix=api_prefix)
+    app.include_router(reminders.router, prefix=api_prefix)
     app.include_router(absences.router, prefix=api_prefix)
     app.include_router(contacts.router, prefix=api_prefix)
     app.include_router(audit.router, prefix=api_prefix)

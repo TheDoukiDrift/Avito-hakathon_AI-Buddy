@@ -43,6 +43,11 @@ class Settings(BaseSettings):
         validation_alias=AliasChoices("MCP_SERVER_URL", "MCP_URL"),
     )
 
+    # S3: the AI-cron imitation. It runs inside the API process (lifespan) and can be
+    # run once from the shell: `python -m app.services.reminder_cron`.
+    reminder_interval_sec: int = 300
+    reminder_overdue_days: int = 2
+
     cors_origins: str = "*"
 
     @field_validator("mcp_url")

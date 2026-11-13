@@ -76,7 +76,8 @@ async def test_mentor_sees_intern_checklist(client):
     assert response.status_code == 200
     body = response.json()
     assert body["total"] > 0
-    assert body["full_name"]
+    assert body["done_count"] == 0
+    assert body["next_item"]["title"]
 
 
 async def test_mentor_cannot_complete_intern_checklist_item(client):
@@ -92,7 +93,7 @@ async def test_mentor_cannot_complete_intern_checklist_item(client):
         assert response.status_code == 403, email
 
     intern_after = (await client.get("/api/checklist", headers=intern_headers)).json()
-    assert intern_after["done"] == 0
+    assert intern_after["done_count"] == 0
 
 
 async def test_intern_completes_own_checklist_item(client):
@@ -109,7 +110,7 @@ async def test_intern_completes_own_checklist_item(client):
     assert body["title"]
 
     intern_after = (await client.get("/api/checklist", headers=intern_headers)).json()
-    assert intern_after["done"] == 1
+    assert intern_after["done_count"] == 1
 
 
 async def test_hr_bp_lists_team_absences(client):

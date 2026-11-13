@@ -22,6 +22,7 @@ async def test_server_registers_every_tool():
         "checklist_get",
         "checklist_complete",
         "contacts_lookup",
+        "contacts_route",
     }
 
 

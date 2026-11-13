@@ -124,6 +124,11 @@ class ChecklistProgress(Base):
     status: Mapped[ProgressStatus] = mapped_column(
         _enum(ProgressStatus, "progress_status"), nullable=False, default=ProgressStatus.pending
     )
+    # When the item entered the intern's active checklist. The reminder cron counts
+    # overdue days from here, not from the template's creation time.
+    started_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=utcnow, nullable=False
+    )
     completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
     user: Mapped[User] = relationship(back_populates="progress")
@@ -161,6 +166,30 @@ class Contact(Base):
     role: Mapped[str] = mapped_column(String(255), nullable=False)
     team: Mapped[str | None] = mapped_column(String(255), nullable=True, index=True)
     email: Mapped[str] = mapped_column(String(255), nullable=False)
+
+
+class Reminder(Base):
+    """A nudge the AI-cron produces for an overdue checklist item (S3).
+
+    One *unacked* reminder per (user, item) is the whole deduplication rule: the
+    cron may create another one only after the previous was acknowledged.
+    """
+
+    __tablename__ = "reminders"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    user_id: Mapped[int] = mapped_column(
+        ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    checklist_item_id: Mapped[int] = mapped_column(
+        ForeignKey("checklist_items.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    message: Mapped[str] = mapped_column(Text, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    acked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+    user: Mapped[User] = relationship()
+    item: Mapped[ChecklistItem] = relationship()
 
 
 class Conversation(Base):

@@ -14,7 +14,7 @@ async def test_checklist_contains_adr13_structure(client):
 
     body = response.json()
     assert body["total"] == 11
-    assert body["done"] == 0
+    assert body["done_count"] == 0
     titles = [item["title"] for item in body["items"]]
     assert "Знакомство с командой" in titles
     assert "Запрос инструмента прогресса у куратора" in titles
@@ -33,9 +33,9 @@ async def test_complete_toggles_and_is_audited(client):
     assert first.json()["status"] == "done"
 
     after = (await client.get("/api/checklist", headers=headers)).json()
-    assert after["done"] == 1
+    assert after["done_count"] == 1
     completed = next(item for item in after["items"] if item["id"] == item_id)
-    assert completed["completed_at"] is not None
+    assert completed["status"] == "done"
 
     second = await client.post(f"/api/checklist/{item_id}/complete", headers=headers)
     assert second.json()["status"] == "pending"

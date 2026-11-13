@@ -37,6 +37,10 @@ class AgentContext:
     role: Role
     checklist: list[ChecklistSnapshot] = field(default_factory=list)
     contacts: list[ContactSnapshot] = field(default_factory=list)
+    # S3: unacked reminder texts, oldest first.
+    reminders: list[str] = field(default_factory=list)
+    # S4: filled only when the knowledge base has no answer (see `Agent.stream`).
+    route: ContactSnapshot | None = None
 
     @property
     def done_count(self) -> int:

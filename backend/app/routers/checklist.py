@@ -4,7 +4,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.db import get_session
 from app.deps import get_current_user
 from app.models import ProgressStatus, User
-from app.schemas import ChecklistItemOut, ChecklistOut
+from app.schemas import ChecklistItemOut, ChecklistNextOut, ChecklistOut
 from app.services import audit
 from app.services import checklist as checklist_service
 from app.services import users as users_service
@@ -18,17 +18,25 @@ def _entry_to_out(entry: checklist_service.ChecklistEntry) -> ChecklistItemOut:
         week=entry.item.week,
         title=entry.item.title,
         description=entry.item.description,
-        position=entry.item.position,
         status=entry.status,
-        completed_at=entry.completed_at,
     )
 
 
-def _to_out(target: User, entries: list[checklist_service.ChecklistEntry]) -> ChecklistOut:
-    items = [_entry_to_out(entry) for entry in entries]
-    done = sum(1 for entry in entries if entry.status is ProgressStatus.done)
+def _to_out(entries: list[checklist_service.ChecklistEntry]) -> ChecklistOut:
+    # `next_item` is computed here, not in the client: it is the first pending item by
+    # (week, position), and both the UI and the agent must agree on it.
+    following = checklist_service.next_item(entries)
     return ChecklistOut(
-        user_id=target.id, full_name=target.full_name, done=done, total=len(entries), items=items
+        items=[_entry_to_out(entry) for entry in entries],
+        next_item=(
+            ChecklistNextOut(
+                id=following.item.id, title=following.item.title, week=following.item.week
+            )
+            if following
+            else None
+        ),
+        done_count=sum(1 for entry in entries if entry.status is ProgressStatus.done),
+        total=len(entries),
     )
 
 
@@ -44,7 +52,7 @@ async def get_checklist(
         else await users_service.first_intern(session, user)
     )
     entries = await checklist_service.get_checklist_for_actor(session, user, target)
-    return _to_out(target, entries)
+    return _to_out(entries)
 
 
 @router.post("/checklist/{item_id}/complete", response_model=ChecklistItemOut)

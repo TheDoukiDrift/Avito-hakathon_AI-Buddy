@@ -138,6 +138,21 @@ async def contacts_lookup(user_id: int, role: str, query: str = "") -> dict[str,
         }
 
 
+async def contacts_route(user_id: int, question: str) -> dict[str, Any]:
+    """К кому обратиться с этим вопросом (S4): контакт или null, если отвечает база знаний."""
+    async with get_session_factory()() as session:
+        actor = await users_service.get_user(session, user_id)
+        contact = await contacts_service.route_question(session, actor.id, question)
+        return {
+            "contact": (
+                {"name": contact.name, "role": contact.role, "email": contact.email}
+                if contact is not None
+                else None
+            ),
+            "escalation": contacts_service.has_escalation_markers(question),
+        }
+
+
 TOOLS = (
     absence_create,
     absence_status,
@@ -145,4 +160,5 @@ TOOLS = (
     checklist_get,
     checklist_complete,
     contacts_lookup,
+    contacts_route,
 )

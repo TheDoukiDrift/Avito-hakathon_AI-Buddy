@@ -19,14 +19,16 @@ from typing import Any
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.agent.base import ToolCall
+from app.agent.base import ContactSnapshot, ToolCall
 from app.agent.dates import local_today, parse_date_phrase
+from app.agent.followup import contact_line
 from app.agent.tools import TOOL_TO_ACTION, validate_tool_args
 from app.errors import ForbiddenError, NotFoundError, ValidationError
 from app.models import AbsenceStatus, AbsenceType, User
 from app.services import absences as absence_service
 from app.services import checklist as checklist_service
 from app.services import contacts as contacts_service
+from app.services import reminders as reminders_service
 from app.services import users as users_service
 
 ACTION_ABSENCE_CREATE = "absence.create"
@@ -36,6 +38,7 @@ ACTION_ABSENCE_LIST = "absence.list"
 ACTION_CHECKLIST_GET = "checklist.get"
 ACTION_CHECKLIST_COMPLETE = "checklist.complete"
 ACTION_CONTACTS_LOOKUP = "contacts.lookup"
+ACTION_CONTACTS_ROUTE = "contacts.route"
 
 ABSENCE_TYPE_LABELS = {
     AbsenceType.day_off: "отгул",
@@ -221,6 +224,10 @@ async def _get_checklist(session: AsyncSession, actor: User, args: dict[str, Any
         lines.append(f"Ближайший шаг — «{next_entry.item.title}» (неделя {next_entry.item.week}).")
     else:
         lines.append("Все пункты отмечены выполненными.")
+    reminder_texts = await reminders_service.messages_for(session, target.id)
+    if reminder_texts:
+        lines.append("Просроченные напоминания:")
+        lines.extend(f"— {message}" for message in reminder_texts)
     return ActionResult(
         text="\n".join(lines),
         data={
@@ -228,6 +235,7 @@ async def _get_checklist(session: AsyncSession, actor: User, args: dict[str, Any
             "done": done,
             "total": total,
             "next": next_entry.item.title if next_entry else None,
+            "reminders": len(reminder_texts),
         },
     )
 
@@ -249,6 +257,26 @@ async def _lookup_contacts(
             "action": ACTION_CONTACTS_LOOKUP,
             "count": len(rows),
             "items": [{"name": row.name, "role": row.role, "email": row.email} for row in rows],
+        },
+    )
+
+
+async def _route_contact(session: AsyncSession, actor: User, args: dict[str, Any]) -> ActionResult:
+    contact = await contacts_service.route_question(session, actor.id, args["question"])
+    if contact is None:
+        return ActionResult(
+            text=(
+                "В базе знаний есть ответ на этот вопрос — уточните формулировку, я найду материал."
+            ),
+            data={"action": ACTION_CONTACTS_ROUTE, "contact": None},
+        )
+    return ActionResult(
+        text=contact_line(
+            ContactSnapshot(name=contact.name, role=contact.role, email=contact.email)
+        ),
+        data={
+            "action": ACTION_CONTACTS_ROUTE,
+            "contact": {"name": contact.name, "role": contact.role, "email": contact.email},
         },
     )
 
@@ -326,6 +354,7 @@ _EXECUTORS = {
     ACTION_CHECKLIST_GET: _get_checklist,
     ACTION_CHECKLIST_COMPLETE: _complete_checklist,
     ACTION_CONTACTS_LOOKUP: _lookup_contacts,
+    ACTION_CONTACTS_ROUTE: _route_contact,
 }
 
 

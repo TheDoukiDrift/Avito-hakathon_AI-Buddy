@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import re
 from collections.abc import AsyncIterator, Sequence
+from dataclasses import replace
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -25,11 +26,13 @@ from app.agent.base import (
     ToolCall,
     split_chunks,
 )
+from app.agent.followup import contact_line, is_next_step_question, next_step_note
 from app.agent.tools import TOOL_SCHEMAS
 from app.models import User
 from app.services import checklist as checklist_service
 from app.services import contacts as contacts_service
 from app.services import kb as kb_service
+from app.services import reminders as reminders_service
 from app.services import users as users_service
 
 MAX_HISTORY_TURNS = 20
@@ -55,6 +58,7 @@ async def build_context(session: AsyncSession, user: User) -> AgentContext:
 
     entries = await checklist_service.get_checklist(session, target)
     contact_rows = await contacts_service.list_contacts(session, user)
+    reminder_texts = await reminders_service.messages_for(session, target.id)
 
     return AgentContext(
         full_name=user.full_name,
@@ -70,6 +74,7 @@ async def build_context(session: AsyncSession, user: User) -> AgentContext:
         contacts=[
             ContactSnapshot(name=row.name, role=row.role, email=row.email) for row in contact_rows
         ],
+        reminders=reminder_texts,
     )
 
 
@@ -151,6 +156,14 @@ class Agent:
             if previous:
                 query = f"{previous} {message}"
         sources = relevant_sources(await retrieve_sources(session, query))
+        # S4: only a question the KB cannot answer needs a person. The contact is
+        # resolved before the LLM so both paths can fall back to the same sentence.
+        route = None
+        if not sources and session is not None and user is not None:
+            contact = await contacts_service.route_question(session, user.id, message)
+            if contact is not None:
+                route = ContactSnapshot(name=contact.name, role=contact.role, email=contact.email)
+                context = replace(context, route=route)
 
         planner = getattr(self.llm, "plan", None)
         action = planner(message, context) if planner is not None and session and user else None
@@ -193,6 +206,21 @@ class Agent:
                     )
                 summary = "\n\n".join(result.text for _, result in results)
                 for chunk in split_chunks(summary):
+                    yield AgentEvent(kind="token", text=chunk)
+
+            # Deterministic S3/S4 tail: a tool call does not guarantee the model
+            # remembered the next step, and a KB miss always needs a human's name.
+            notes: list[str] = []
+            if is_next_step_question(message) and not any(
+                call.name == "checklist_get" for call in calls
+            ):
+                note = next_step_note(context)
+                if note:
+                    notes.append(note)
+            if route is not None:
+                notes.append(contact_line(route))
+            for note in notes:
+                for chunk in split_chunks(f"\n\n{note}"):
                     yield AgentEvent(kind="token", text=chunk)
             yield AgentEvent(
                 kind="done", data={"sources": [s.as_source() for s in unique_sources(sources)]}
