@@ -4,8 +4,10 @@
 .PHONY: up down logs test seed lint build ps restart
 
 ## Поднять весь стек (сборка образов)
+## --force-recreate: nginx резолвит адрес backend один раз при старте. Если
+## пересобрать только бэкенд, фронтенд остаётся со старым IP и :3000 отдаёт 502.
 up:
-	docker compose up --build -d
+	docker compose up --build -d --force-recreate
 
 ## Остановить и убрать контейнеры
 down:
@@ -18,7 +20,7 @@ logs:
 ## Покрытие: бэкенд pytest + фронтенд vitest (порог 80% в CI)
 test:
 	docker compose exec backend pytest --cov=app --cov-report=html --cov-report=xml
-	docker compose exec frontend npx vitest run --coverage
+	docker compose run --rm --build frontend-test
 
 ## Пересоздать синтетические данные (сиды)
 seed:

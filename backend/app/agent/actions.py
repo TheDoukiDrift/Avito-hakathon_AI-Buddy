@@ -244,6 +244,14 @@ async def _lookup_contacts(
     session: AsyncSession, actor: User, args: dict[str, Any]
 ) -> ActionResult:
     rows = await contacts_service.list_contacts(session, actor, args.get("query") or None)
+    if not rows and args.get("query"):
+        # «кто занимается командировками?» is a routing question, not a directory
+        # filter: no name/role/email matches the sentence, so answer with the
+        # escalation chain (наставник → руководитель → HR BP) instead of reporting
+        # that the team has no contacts.
+        rows = contacts_service.escalation_chain(
+            await contacts_service.list_contacts(session, actor)
+        )
     if not rows:
         return ActionResult(
             text="Контакты команды пока не заполнены — уточните у HR BP.",

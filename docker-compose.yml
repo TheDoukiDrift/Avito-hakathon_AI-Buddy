@@ -105,5 +105,16 @@ services:
       - "3000:80"
     restart: unless-stopped
 
+  # Одноразовый прогон фронтенд-тестов (`make test`). Runtime-образ frontend —
+  # это nginx, node в нём нет, поэтому тесты идут в стадии сборки Dockerfile:
+  # там уже установлены зависимости из pnpm-lock.yaml.
+  frontend-test:
+    profiles: ["test"]
+    build:
+      context: ./frontend
+      target: build
+    working_dir: /app
+    command: ["pnpm", "coverage"]
+
 volumes:
   pgdata:

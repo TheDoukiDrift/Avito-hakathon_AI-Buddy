@@ -99,3 +99,25 @@ async def test_unrelated_question_falls_back_to_mentor_in_chat(client):
     answer = "".join(event.get("token", "") for event in events)
     assert "Не нашёл в базе знаний" in answer
     assert "mentor@example.com" in answer
+
+
+async def test_routing_question_names_the_chain_in_chat(client):
+    """README S4: «кто занимается командировками?» must name people, not an empty team."""
+    import json
+
+    from tests.conftest import auth_headers
+
+    headers = await auth_headers(client, INTERN)
+    async with client.stream(
+        "POST",
+        "/api/chat/stream",
+        headers=headers,
+        json={"message": "кто занимается командировками?"},
+    ) as response:
+        raw = "".join([chunk async for chunk in response.aiter_text()])
+    events = [
+        json.loads(line[len("data: ") :]) for line in raw.splitlines() if line.startswith("data: ")
+    ]
+    answer = "".join(event.get("token", "") for event in events)
+    assert "не заполнены" not in answer
+    assert "mentor@example.com" in answer

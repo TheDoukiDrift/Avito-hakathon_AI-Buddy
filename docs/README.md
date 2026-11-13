@@ -147,8 +147,8 @@ MCP_SERVER_URL=http://mcp:8001
 ## Тесты и покрытие
 
 ```bash
-docker compose exec backend pytest --cov --cov-report=html --cov-report=xml
-pnpm --dir frontend test -- --coverage
+docker compose exec backend pytest --cov=app --cov-report=html --cov-report=xml
+docker compose run --rm --build frontend-test   # vitest в стадии сборки frontend
 ```
 
 Покрытие ≥80% меряется раздельно: бэкенд — pytest, фронтенд — Vitest. Код
@@ -223,8 +223,8 @@ Makefile
 ## Статус разработки
 
 Репозиторий в активной разработке: бэкенд реализован и покрыт тестами
-(`pytest`, >100 тестов, покрытие прикладного кода ≥80%), MCP-сервер поднимается
-отдельным процессом, фронтенд — в работе. Секции со ссылками на код, CI и
+(`pytest`, 135 тестов, покрытие прикладного кода 89%), MCP-сервер поднимается
+отдельным процессом, фронтенд реализован и покрыт Vitest. Секции со ссылками на код, CI и
 видеодемонстрацию заполняются по мере готовности. План на 7 дней, сценарии и
 принятые трактовки неоднозначностей кейса — в `docs/PLAN.md`, развёрнутые
 обоснования решений — в `docs/DECISIONS.md`.
