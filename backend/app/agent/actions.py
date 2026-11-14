@@ -66,7 +66,8 @@ _DAY_AFTER_RE = re.compile(r"\b(послезавтра)\b", re.IGNORECASE)
 _ISO_DATE_RE = re.compile(r"\b(\d{4}-\d{2}-\d{2})\b")
 
 # Identity is never taken from the model: the authenticated user is the actor.
-_IDENTITY_FIELDS = ("user_id", "role")
+# The keys are dropped from the model's arguments even if it invents them.
+_IDENTITY_FIELDS = ("user_id", "role", "actor", "actor_id")
 
 
 @dataclass
@@ -214,9 +215,12 @@ async def _confirm_absence(
 
 
 async def _get_checklist(session: AsyncSession, actor: User, args: dict[str, Any]) -> ActionResult:
-    target = actor
-    if args.get("target_user_id") is not None:
-        target = await users_service.get_user(session, int(args["target_user_id"]))
+    # The identity of the person whose checklist is shown comes from the session, not
+    # from the model: an intern sees their own, a mentor/HR BP sees their team's intern.
+    try:
+        target = await users_service.first_intern(session, actor)
+    except NotFoundError:
+        target = actor
     entries = await checklist_service.get_checklist_for_actor(session, actor, target)
     done, total, next_entry = checklist_service.summarize(entries)
     lines = [f"Чек-лист: {done} из {total} выполнено."]
@@ -394,8 +398,9 @@ def _validation_reply(tool: str, detail: str) -> str:
 async def execute_tool_call(session: AsyncSession, actor: User, call: ToolCall) -> ActionResult:
     """Turn an OpenAI-style `tool_call` into a services call, with the actor as identity.
 
-    `user_id`/`role` from the model are ignored: the authenticated user is the actor,
-    so a prompt-injected "create it for user 7" cannot escalate. Relative dates in
+    The session user *is* the actor: `user_id`/`role` are absent from the tool
+    schemas, and if a model invents them anyway they are dropped here, so a
+    prompt-injected "create it for user 7" cannot escalate. Relative dates in
     the arguments («завтра») resolve against local Moscow time, not UTC.
     """
     action_name = TOOL_TO_ACTION.get(call.name)
@@ -415,8 +420,6 @@ async def execute_tool_call(session: AsyncSession, actor: User, call: ToolCall) 
         )
 
     args = {key: value for key, value in raw.items() if key not in _IDENTITY_FIELDS}
-    args["user_id"] = actor.id
-    args["role"] = actor.role.value
     for key in ("date_from", "date_to"):
         value = args.get(key)
         if isinstance(value, str):
@@ -431,4 +434,5 @@ async def execute_tool_call(session: AsyncSession, actor: User, call: ToolCall) 
             text=_validation_reply(call.name, exc.detail),
             data={"tool": call.name, "error": "validation_error", "detail": exc.detail},
         )
+    # `actor` is the only source of identity: nothing model-supplied reaches it.
     return await execute_action(session, actor, AgentAction(action_name, args))

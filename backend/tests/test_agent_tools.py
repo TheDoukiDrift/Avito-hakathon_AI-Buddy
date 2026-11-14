@@ -71,6 +71,41 @@ def _create_call(**args: object) -> ToolCall:
     return ToolCall(name="absence_create", arguments=json.dumps(args), call_id="call_1")
 
 
+# Keys the chat model must never be offered: identity comes from the session.
+_IDENTITY_KEYS = frozenset({"user_id", "role", "actor", "actor_id", "target_user_id"})
+
+
+def _json_keys(node: object) -> set[str]:
+    if isinstance(node, dict):
+        return set(node) | {key for value in node.values() for key in _json_keys(value)}
+    if isinstance(node, list):
+        return {key for item in node for key in _json_keys(item)}
+    return set()
+
+
+def test_tool_schemas_expose_no_identity_parameters():
+    """The model asking "назовите ваш user_id" was the bug: identity is the session."""
+    assert not _json_keys(TOOL_SCHEMAS) & _IDENTITY_KEYS
+    assert "user_id" not in json.dumps(TOOL_SCHEMAS)
+
+    by_name = {
+        schema["function"]["name"]: schema["function"]["parameters"] for schema in TOOL_SCHEMAS
+    }
+    assert by_name["absence_create"]["required"] == ["type", "date_from", "date_to"]
+    assert set(by_name["absence_create"]["properties"]) == {
+        "type",
+        "date_from",
+        "date_to",
+        "reason",
+    }
+    assert set(by_name["absence_status"]["properties"]) == {"request_id"}
+    assert by_name["absence_list"]["properties"] == {}
+    assert by_name["checklist_get"]["properties"] == {}
+    assert set(by_name["checklist_complete"]["properties"]) == {"item_id"}
+    assert set(by_name["contacts_lookup"]["properties"]) == {"query"}
+    assert set(by_name["contacts_route"]["properties"]) == {"question"}
+
+
 async def _intern(session) -> User:
     return await users_service.get_by_email(session, INTERN)
 
@@ -81,6 +116,33 @@ async def _run(agent: Agent, message: str, session, intern: User) -> tuple[str, 
         event async for event in agent.stream(message, [], context, session=session, user=intern)
     ]
     return "".join(event.text for event in events), events
+
+
+async def test_tool_call_without_identity_creates_the_draft_for_the_session_user():
+    async with get_session_factory()() as session:
+        intern = await _intern(session)
+        call = _create_call(
+            type="day_off",
+            date_from="2026-12-01",
+            date_to="2026-12-01",
+            reason="семейные обстоятельства",
+        )
+        answer, events = await _run(
+            Agent(StubToolLLM(tool_calls=[call])), "оформи отгул завтра", session, intern
+        )
+
+        draft = await absence_service.latest_own_draft(session, intern)
+        assert draft is not None
+        assert draft.user_id == intern.id
+        assert draft.status is AbsenceStatus.draft
+        assert draft.reason == "семейные обстоятельства"
+
+        assert f"Черновик заявки №{draft.id} создан" in answer
+        assert "подтверждаю" in answer
+        assert "user_id" not in answer.lower()
+        tool_event = next(event for event in events if event.kind == "tool_call")
+        assert tool_event.data["request_id"] == draft.id
+        assert tool_event.data["tool"] == "absence_create"
 
 
 async def test_tool_call_creates_draft_and_asks_for_confirmation():
@@ -268,6 +330,7 @@ def test_system_prompt_carries_the_tool_policy():
     assert "absence_create" in system
     assert "НИКОГДА не создавай заявку без явного подтверждения" in system
     assert "YYYY-MM-DD" in system
+    assert "НЕ запрашивай user_id" in system
 
 
 async def test_fake_llm_path_uses_local_tomorrow_and_accepts_confirmation():
@@ -363,6 +426,14 @@ async def test_chat_endpoint_runs_injected_llm_tool_call(client):
         ]
         answer = "".join(event.get("token", "") for event in events)
         assert "подтверждаю" in answer
+        # The response flow must not ask the caller to supply their own identity.
+        assert "user_id" not in answer.lower()
+
+        async with get_session_factory()() as session:
+            intern = await _intern(session)
+            draft = await absence_service.latest_own_draft(session, intern)
+            assert draft is not None
+            assert draft.user_id == intern.id
 
         history = (await client.get("/api/chat/history", headers=headers)).json()
         assert history[-1]["role"] == "assistant"

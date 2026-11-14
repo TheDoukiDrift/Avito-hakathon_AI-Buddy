@@ -148,7 +148,8 @@ class Agent:
             return
 
         turns = [*history[-MAX_HISTORY_TURNS:], ChatTurn(role="user", content=message)]
-        # Both clients get the tool schemas (they mirror `mcp_server/tools.py` one-to-one).
+        # Same operations as `mcp_server/tools.py` minus caller identity: the model sees
+        # no user_id/role, the executor injects the session user as the actor.
         tools = TOOL_SCHEMAS
         query = message
         if history and _needs_history(message):
