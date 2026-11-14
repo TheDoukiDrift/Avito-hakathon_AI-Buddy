@@ -8,7 +8,7 @@ from app.db import get_session_factory
 from app.models import Contact, Role, User
 from app.services import contacts as contacts_service
 from mcp_server import tools
-from tests.conftest import INTERN, user_id
+from tests.conftest import HR_BP, INTERN, MANAGER, MENTOR, user_id
 
 
 async def _route(question: str) -> Contact | None:
@@ -58,6 +58,23 @@ async def test_escalation_chain_order_and_markers():
 
     assert contacts_service.has_escalation_markers("у меня конфликт с коллегой")
     assert contacts_service.has_escalation_markers("не могу разобраться")
+
+
+async def test_privileged_roles_escalate_above_themselves():
+    async with get_session_factory()() as session:
+        mentor = (await session.execute(select(User).where(User.email == MENTOR))).scalar_one()
+        manager = (await session.execute(select(User).where(User.email == MANAGER))).scalar_one()
+        hr = (await session.execute(select(User).where(User.email == HR_BP))).scalar_one()
+
+        # A manager is not told to ask a manager; a mentor is not told to ask a mentor.
+        assert (await contacts_service.route_question(session, mentor.id, "зарплат")).role == (
+            "руководитель"
+        )
+        assert (await contacts_service.route_question(session, manager.id, "зарплат")).role == (
+            "HR BP"
+        )
+        # HR BP has nobody above them: no contact, the buddy answers itself.
+        assert await contacts_service.route_question(session, hr.id, "зарплат") is None
     assert not contacts_service.has_escalation_markers("как оформить отгул")
 
 

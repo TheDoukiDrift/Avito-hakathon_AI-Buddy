@@ -13,6 +13,7 @@ from typing import Any
 from app.agent.actions import AgentAction, detect_action
 from app.agent.base import AgentContext, ChatTurn, KbSnippet, split_chunks
 from app.agent.followup import contact_line
+from app.models import Role
 
 ABSENCE_KEYWORDS = ("отгул", "отпуск", "больничн", "отсутств", "отпроситься", "заявк")
 CHECKLIST_KEYWORDS = (
@@ -54,6 +55,21 @@ def _matches(text: str, keywords: Sequence[str]) -> bool:
 
 
 def _absence_answer(context: AgentContext) -> str:
+    """The same procedure, phrased from the caller's side of the approval chain."""
+    if context.role is Role.hr_bp:
+        return (
+            f"{context.full_name}, вы — финальный контроль: после руководителя заявка "
+            "попадает к вам. Стажёр создаёт черновик и подтверждает его, руководитель "
+            "согласует или отклоняет даты, и только затем заявка уходит вам на проверку. "
+            "Свои собственные заявки вы не согласуете — самосогласования нет."
+        )
+    if context.role in (Role.mentor, Role.manager):
+        return (
+            f"{context.full_name}, вы — согласующая сторона: заявка подопечного сначала "
+            "уходит вам. Вы видите её в разделе «Заявки» и можете согласовать или отклонить; "
+            "после вашего решения заявка уходит в HR BP. Даты подопечный согласует с вами "
+            "до создания черновика."
+        )
     return (
         f"{context.full_name}, оформление отсутствия занимает три шага.\n\n"
         "1. Согласуйте дату с руководителем — это можно сделать неформально, но лучше "
@@ -68,41 +84,78 @@ def _absence_answer(context: AgentContext) -> str:
 
 def _checklist_answer(context: AgentContext) -> str:
     if not context.checklist:
+        if context.role is not Role.intern:
+            return (
+                "Чек-лист подопечного ещё не назначен. Программу адаптации подключает HR BP."
+            )
         return (
             "Чек-лист адаптации ещё не назначен. Обратитесь к наставнику или HR BP — "
             "они подключат вас к программе."
         )
     total = len(context.checklist)
     done = context.done_count
-    lines = [f"{context.full_name}, ваш чек-лист адаптации: {done} из {total} выполнено."]
+    privileged = context.role is not Role.intern
+    if privileged:
+        lines = [f"{context.full_name}, чек-лист подопечного: {done} из {total} выполнено."]
+    else:
+        lines = [f"{context.full_name}, ваш чек-лист адаптации: {done} из {total} выполнено."]
     pending = context.next_pending
     if pending is not None:
-        lines.append(f"Ближайший шаг — «{pending.title}» (неделя {pending.week}).")
+        if privileged:
+            lines.append(f"Ближайший шаг подопечного — «{pending.title}» (неделя {pending.week}).")
+        else:
+            lines.append(f"Ближайший шаг — «{pending.title}» (неделя {pending.week}).")
+    elif privileged:
+        lines.append("Подопечный прошёл все шаги — можно планировать итоговую встречу.")
     else:
         lines.append("Все пункты отмечены выполненными — можно переходить к итоговой встрече.")
     remaining = [item.title for item in context.checklist if not item.done][:3]
     if remaining:
         lines.append("Дальше по плану: " + "; ".join(remaining) + ".")
     if context.reminders:
-        lines.append("Просроченные напоминания:")
+        reminder_label = (
+            "Просроченные напоминания подопечного:" if privileged else "Просроченные напоминания:"
+        )
+        lines.append(reminder_label)
         lines.extend(f"— {message}" for message in context.reminders)
-    lines.append("Отметить пункт выполненным можно в разделе «Мой чек-лист».")
+    if not privileged:
+        lines.append("Отметить пункт выполненным можно в разделе «Мой чек-лист».")
     return "\n".join(lines)
 
 
 def _routing_answer(context: AgentContext, text: str) -> str:
-    if not context.contacts:
+    contacts = [contact for contact in context.contacts if contact.name != context.full_name]
+    if not contacts:
         return "Контакты команды пока не заполнены — уточните у HR BP."
     lines = ["По этому вопросу лучше обратиться к:"]
-    for contact in context.contacts:
+    for contact in contacts:
         lines.append(f"— {contact.name}, {contact.role}: {contact.email}")
     if "командиров" in text or "отпуск" in text:
-        lines.append("Командировки и отсутствия ведёт HR BP; руководитель согласует даты.")
+        if context.role is Role.intern:
+            lines.append("Командировки и отсутствия ведёт HR BP; руководитель согласует даты.")
+        elif context.role is Role.hr_bp:
+            lines.append("Заявки приходят к вам после руководителя — вы проверяете оформление.")
+        else:
+            lines.append("Отсутствия подопечных согласуете вы; оформление ведёт HR BP.")
     lines.append(
         f"Ваша роль — {_ROLE_LABELS.get(context.role.value, context.role.value)}: "
         "данные вне вашей зоны доступа я не показываю."
     )
     return "\n".join(lines)
+
+
+def _fallback_note(context: AgentContext) -> str:
+    if context.role is Role.intern:
+        return KNOWLEDGE_BASE_NOTE
+    if context.role is Role.hr_bp:
+        return (
+            "Пока в базе знаний (офлайн-заглушка) нет точного ответа на этот вопрос. "
+            "Уточните формулировку — или задайте вопрос коллегам в HR."
+        )
+    return (
+        "Пока в базе знаний (офлайн-заглушка) нет точного ответа на этот вопрос. "
+        "Уточните формулировку — или задайте вопрос HR BP: он ведёт процессы."
+    )
 
 
 def _excerpt(content: str, title: str, limit: int = 320) -> str:
@@ -141,11 +194,15 @@ def _rag_answer(sources: Sequence[KbSnippet]) -> str:
 
 def answer(message: str, context: AgentContext, sources: Sequence[KbSnippet] = ()) -> str:
     """Rule-based answer. Pure function — the unit under test."""
+    text = message.strip().lower()
     if sources:
+        # Procedure docs are written for the intern; for an approver (mentor/manager/
+        # HR BP) the backend template is the correct answer even when retrieval hits.
+        if context.role is not Role.intern and _matches(text, ABSENCE_KEYWORDS):
+            return _absence_answer(context)
         # RAG path: retrieved material wins over keyword shortcuts, so an answer
         # always carries the document it came from.
         return _rag_answer(sources)
-    text = message.strip().lower()
     if _matches(text, ABSENCE_KEYWORDS):
         return _absence_answer(context)
     if _matches(text, CHECKLIST_KEYWORDS):
@@ -155,7 +212,7 @@ def answer(message: str, context: AgentContext, sources: Sequence[KbSnippet] = (
     if context.route is not None:
         # S4: the knowledge base had nothing — name the first person of the chain.
         return contact_line(context.route)
-    return KNOWLEDGE_BASE_NOTE
+    return _fallback_note(context)
 
 
 class FakeLLM:

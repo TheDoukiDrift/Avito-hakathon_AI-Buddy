@@ -24,10 +24,10 @@ from app.models import Role
 from tests.conftest import INTERN, auth_headers
 
 
-def _context() -> AgentContext:
+def _context(role: Role = Role.intern) -> AgentContext:
     return AgentContext(
         full_name="Доуки Хоши",
-        role=Role.intern,
+        role=role,
         checklist=[
             ChecklistSnapshot(title="Знакомство с командой", week=1, done=True),
             ChecklistSnapshot(title="Доступы Jira и Confluence", week=1, done=False),
@@ -44,6 +44,62 @@ def test_absence_keyword_routes_to_procedure():
     assert "черновик" in text.lower()
     assert "руководител" in text.lower()
     assert "подтверд" in text.lower()
+
+
+def test_absence_answer_for_manager_addresses_the_approver():
+    text = fake_module.answer("как оформить отгул?", _context(Role.manager))
+    assert "согласующая сторона" in text
+    assert "разделе «Заявки»" in text
+    assert "Согласуйте дату с руководителем" not in text
+
+
+def test_absence_answer_for_mentor_matches_manager():
+    text = fake_module.answer("как оформить отгул?", _context(Role.mentor))
+    assert "согласующая сторона" in text
+    assert "согласовать или отклонить" in text
+
+
+def test_absence_answer_for_hr_bp_is_final_control():
+    text = fake_module.answer("как оформить отгул?", _context(Role.hr_bp))
+    assert "финальный контроль" in text
+    assert "самосогласования нет" in text
+    assert "Согласуйте дату с руководителем" not in text
+
+
+def test_intern_oriented_kb_doc_does_not_leak_to_an_approver():
+    snippet = KbSnippet(
+        title="Процедура отгула по ТК РФ",
+        source_url="https://example.test/otgul",
+        content="Процедура отгула по ТК РФ. Согласуйте дату с руководителем и создайте черновик.",
+        score=3.0,
+    )
+    text = fake_module.answer("как оформить отгул", _context(Role.manager), [snippet])
+    assert "согласующая сторона" in text
+    assert "— по материалу" not in text
+
+
+def test_checklist_answer_for_manager_is_ward_progress():
+    text = fake_module.answer("что у меня по чек-листу?", _context(Role.manager))
+    assert "чек-лист подопечного" in text
+    assert "1 из 2" in text
+    assert "Мой чек-лист" not in text
+
+
+def test_routing_answer_does_not_offer_the_caller_their_own_contact():
+    context = _context(Role.manager)
+    context.contacts.append(
+        ContactSnapshot(name="Доуки Хоши", role="руководитель", email="me@example.com")
+    )
+    text = fake_module.answer("к кому обратиться по командировкам?", context)
+    assert "me@example.com" not in text
+    assert "Отсутствия подопечных согласуете вы" in text
+
+
+def test_default_answer_for_manager_escalates_to_hr_bp():
+    text = fake_module.answer("расскажи про графану", _context(Role.manager))
+    assert "базе знаний" in text
+    assert "HR BP" in text
+    assert "спросите наставника" not in text
 
 
 def test_checklist_keyword_summarizes_progress():
@@ -149,6 +205,17 @@ def test_openai_payload_carries_role_and_history():
     assert payload["messages"][0]["role"] == "system"
     assert "intern" in payload["messages"][0]["content"]
     assert payload["messages"][-1]["content"] == "как дела"
+
+
+def test_openai_system_prompt_carries_the_role_policy():
+    client = OpenAICompatibleClient(base_url="https://llm.example/v1", api_key="k", model="m")
+    payload = client.build_payload(
+        [ChatTurn("user", "как оформить отгул?")], _context(Role.manager)
+    )
+    system = payload["messages"][0]["content"]
+    assert "роль: manager" in system
+    assert "Политика роли" in system
+    assert "не предлагай им обратиться к себе" in system
 
 
 async def test_openai_client_parses_sse_stream():

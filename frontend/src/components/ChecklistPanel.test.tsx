@@ -2,13 +2,24 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import * as api from '../api/client'
-import type { ChecklistResponse } from '../api/schemas'
+import type { ChecklistResponse, Role, User } from '../api/schemas'
+import { useAuthStore } from '../stores/authStore'
 import { ChecklistPanel } from './ChecklistPanel'
 
 vi.mock('../api/client', () => ({
   getChecklist: vi.fn(),
   completeChecklistItem: vi.fn(),
+  getToken: () => null,
+  setToken: vi.fn(),
+  setUnauthorizedHandler: vi.fn(),
 }))
+
+const intern: User = {
+  id: '1',
+  email: 'intern@example.com',
+  role: 'intern',
+  full_name: 'Доуки Хоши',
+}
 
 const checklist: ChecklistResponse = {
   items: [
@@ -16,7 +27,7 @@ const checklist: ChecklistResponse = {
     { id: '2', week: 1, title: 'Составить план', description: 'Черновик на неделю', status: 'pending' },
     { id: '3', week: 2, title: 'Запросить доступы', description: '', status: 'pending' },
   ],
-  next_item: { id: '3', title: 'Запросить доступы', week: 2 },
+  next_item: { id: '2', title: 'Составить план', week: 1 },
   done_count: 1,
   total: 3,
 }
@@ -30,7 +41,12 @@ function renderPanel() {
   )
 }
 
+function setRole(role: Role) {
+  useAuthStore.setState({ user: { ...intern, role } })
+}
+
 beforeEach(() => {
+  useAuthStore.setState({ user: intern })
   vi.mocked(api.getChecklist).mockReset()
   vi.mocked(api.completeChecklistItem).mockReset()
 })
@@ -43,8 +59,8 @@ describe('ChecklistPanel', () => {
     const plate = await screen.findByLabelText('Следующий шаг')
 
     expect(plate).toHaveTextContent('Следующий шаг')
-    expect(plate).toHaveTextContent('Запросить доступы')
-    expect(plate).toHaveTextContent('Неделя 2')
+    expect(plate).toHaveTextContent('Составить план')
+    expect(plate).toHaveTextContent('Неделя 1')
   })
 
   it('считает прогресс по done_count и total', async () => {
@@ -101,6 +117,62 @@ describe('ChecklistPanel', () => {
 
     expect(plate).toHaveTextContent('Адаптация пройдена')
     expect(plate).toHaveTextContent('3 из 3')
+    expect(plate).toHaveTextContent('спроси бадди')
     expect(screen.queryByLabelText('Следующий шаг')).not.toBeInTheDocument()
   })
+
+  it('блокирует шаг, пока предыдущий не отмечен', async () => {
+    vi.mocked(api.getChecklist).mockResolvedValue(checklist)
+    renderPanel()
+
+    const firstPending = await screen.findByRole('button', {
+      name: 'Отметить выполненным: Составить план',
+    })
+    const later = screen.getByRole('button', {
+      name: 'Отметить выполненным: Запросить доступы',
+    })
+
+    expect(firstPending).toBeEnabled()
+    expect(later).toBeDisabled()
+    expect(later).toHaveAttribute('title', 'Сначала предыдущий шаг')
+    expect(screen.getByText('Сначала предыдущий шаг')).toBeInTheDocument()
+  })
+
+  it('для наставника показывает прогресс подопечного без отметок', async () => {
+    setRole('mentor')
+    vi.mocked(api.getChecklist).mockResolvedValue(checklist)
+    renderPanel()
+
+    expect(
+      await screen.findByRole('heading', { name: 'Прогресс стажёра' }),
+    ).toBeInTheDocument()
+    expect(
+      screen.getByRole('progressbar', { name: 'Прогресс адаптации подопечного' }),
+    ).toBeInTheDocument()
+    expect(await screen.findByLabelText('Ближайший шаг подопечного')).toHaveTextContent(
+      'Составить план',
+    )
+    expect(screen.queryByRole('button', { name: /Отметить выполненным/ })).not.toBeInTheDocument()
+    expect(screen.queryByText(/спроси бадди/i)).not.toBeInTheDocument()
+  })
+
+  it.each(['mentor', 'manager', 'hr_bp'] as const)(
+    'в режиме просмотра (%s) плашка не зовёт к бадди',
+    async (role) => {
+      setRole(role)
+      const doneChecklist: ChecklistResponse = {
+        items: checklist.items.map((item) => ({ ...item, status: 'done' })),
+        next_item: null,
+        done_count: 3,
+        total: 3,
+      }
+      vi.mocked(api.getChecklist).mockResolvedValue(doneChecklist)
+      renderPanel()
+
+      const plate = await screen.findByLabelText('Подопечный прошёл все шаги')
+
+      expect(plate).toHaveTextContent('Подопечный прошёл все шаги')
+      expect(plate).not.toHaveTextContent(/бадди/i)
+    },
+  )
 })

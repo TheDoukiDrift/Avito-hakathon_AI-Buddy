@@ -8,7 +8,7 @@ from datetime import UTC, datetime
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.errors import ForbiddenError, NotFoundError
+from app.errors import ConflictError, ForbiddenError, NotFoundError
 from app.models import ChecklistItem, ChecklistProgress, ProgressStatus, User
 from app.services import rbac
 
@@ -70,6 +70,10 @@ async def complete_item(
     The matrix grants completion of one's own checklist only, and only to an intern
     (mentors/managers/HR BP get read-only visibility of their wards). The guard is
     checked against the real target, not against the actor twice.
+
+    The plan is sequential: an item may be completed only when every earlier item
+    (by `week`, then `position`) is already done. Un-completing is always allowed,
+    so the intern can step back and redo a week.
     """
     item = await session.get(ChecklistItem, item_id)
     if item is None:
@@ -77,6 +81,16 @@ async def complete_item(
     target = target or actor
     if not rbac.can_complete_checklist(actor, target):
         raise ForbiddenError("Отмечать пункты может только стажёр в своём чек-листе")
+
+    entries = await get_checklist(session, target)
+    index = next(i for i, entry in enumerate(entries) if entry.item.id == item_id)
+    if entries[index].status is not ProgressStatus.done:
+        blocking = next(
+            (entry for entry in entries[:index] if entry.status is not ProgressStatus.done),
+            None,
+        )
+        if blocking is not None:
+            raise ConflictError(f"Сначала выполните предыдущий шаг: {blocking.item.title}")
 
     result = await session.execute(
         select(ChecklistProgress).where(

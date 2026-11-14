@@ -1,3 +1,4 @@
+import { useAuthStore } from '../stores/authStore'
 import { AbsenceCard } from './AbsenceCard'
 import { ChecklistPanel } from './ChecklistPanel'
 import { ContactsList } from './ContactsList'
@@ -16,12 +17,16 @@ interface SidebarProps {
  * кольца»: слева навигация, в центре страница, справа чат).
  */
 export function Sidebar({ section }: SidebarProps) {
+  // Напоминания — про чек-лист стажёра: привилегированные роли их не видят.
+  const role = useAuthStore((state) => state.user?.role ?? 'intern')
+  const viewer = role !== 'intern'
+
   return (
     <div className="page">
       {section === 'day' ? (
         <>
           <ChecklistPanel />
-          <RemindersPanel />
+          {viewer ? null : <RemindersPanel />}
         </>
       ) : null}
       {section === 'absences' ? <AbsenceCard /> : null}

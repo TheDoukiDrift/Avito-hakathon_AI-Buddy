@@ -13,7 +13,7 @@ from sqlalchemy import or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.errors import ForbiddenError
-from app.models import Contact, User
+from app.models import Contact, Role, User
 from app.services import kb as kb_service
 from app.services import rbac
 from app.services import users as users_service
@@ -31,6 +31,9 @@ ESCALATION_MARKERS = (
 
 # Order of the chain from the Q&A (00:36:19). Matched as substrings of `contacts.role`.
 _ESCALATION_ROLES = ("наставник", "руководител", "hr")
+
+# A caller is escalated *above* their own level: a manager is not told to ask a manager.
+_ACTOR_RANK = {Role.intern: 0, Role.mentor: 1, Role.manager: 2, Role.hr_bp: 3}
 
 
 def has_escalation_markers(question: str) -> bool:
@@ -66,12 +69,18 @@ async def route_question(session: AsyncSession, user_id: int, question: str) -> 
 
     A question with an escalation marker is routed even if retrieval finds a
     document — «не получается войти в Jira» wants a human, not an article.
+
+    The chain starts *above* the caller's own level (see `_ACTOR_RANK`), so an
+    intern is routed to the mentor, a mentor to the manager and a manager to HR BP.
+    HR BP has nobody above them, so the buddy answers without a contact.
     """
     user = await users_service.get_user(session, user_id)
     if not has_escalation_markers(question) and await kb_service.search(session, question):
         return None
     chain = await _chain_for(session, user)
-    return chain[0] if chain else None
+    actor_rank = _ACTOR_RANK.get(user.role, len(_ACTOR_RANK))
+    above = [contact for contact in chain if _role_rank(contact.role) >= actor_rank]
+    return above[0] if above else None
 
 
 async def list_contacts(

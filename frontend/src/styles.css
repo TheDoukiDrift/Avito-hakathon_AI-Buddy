@@ -1026,6 +1026,31 @@ h1 {
   cursor: default;
 }
 
+/* Заблокированный шаг: приглушён и без курсора-указателя, пока предыдущий не отмечен. */
+.task--locked {
+  opacity: 0.55;
+}
+
+.task--locked .task__check {
+  border-color: var(--line-strong);
+  border-style: dashed;
+}
+
+.task__check--static {
+  border-style: dashed;
+  border-color: var(--line-strong);
+}
+
+.task.is-done .task__check--static {
+  border-style: solid;
+  border-color: var(--forest);
+}
+
+.task__meta--locked {
+  font-size: 13px;
+  color: var(--muted);
+}
+
 .task__body {
   min-width: 0;
   display: grid;

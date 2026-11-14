@@ -1,6 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import * as api from '../api/client'
 import type { ChecklistResponse } from '../api/schemas'
+import { useAuthStore } from '../stores/authStore'
 import { checklistProgress, groupChecklistByWeek, nextPendingItem, weekLabel } from '../utils/checklist'
 import { describeError } from '../utils/errors'
 import { Icon } from './Icon'
@@ -13,6 +14,10 @@ const UPCOMING_LIMIT = 3
 
 export function ChecklistPanel() {
   const queryClient = useQueryClient()
+  // Привилегированные роли смотрят на чек-лист подопечного (бэкенд сам решает, чей):
+  // интерфейс в этом режиме только показывает прогресс, без отметок и напоминаний.
+  const role = useAuthStore((state) => state.user?.role ?? 'intern')
+  const viewer = role !== 'intern'
 
   const checklistQuery = useQuery({
     queryKey: ['checklist'],
@@ -49,25 +54,36 @@ export function ChecklistPanel() {
   const allDone = total > 0 && done === total
   const pending = items.filter((item) => item.status === 'pending')
   const upcoming = pending.filter((item) => item.id !== nextItem?.id).slice(0, UPCOMING_LIMIT)
+  // Шаги проходятся по порядку: пока предыдущий не отмечен, следующие заблокированы.
+  const indexById = new Map(items.map((item, index) => [item.id, index]))
+  const firstPendingIndex = items.findIndex((item) => item.status === 'pending')
 
   return (
-    <section className="panel" aria-label="Чек-лист адаптации">
+    <section
+      className="panel"
+      aria-label={viewer ? 'Прогресс стажёра' : 'Чек-лист адаптации'}
+    >
       <header className="intro">
-        <p className="eyebrow">План адаптации</p>
-        <h1>Мой день</h1>
+        <p className="eyebrow">{viewer ? 'Адаптация подопечного' : 'План адаптации'}</p>
+        <h1>{viewer ? 'Прогресс стажёра' : 'Мой день'}</h1>
         <p className="lead">
-          Давай двигаться небольшими шагами: каждый выполненный пункт наполняет кольцо дня.
+          {viewer
+            ? 'Здесь видно, как стажёр проходит план адаптации: шаги идут по порядку, прогресс обновляется автоматически.'
+            : 'Давай двигаться небольшими шагами: каждый выполненный пункт наполняет кольцо дня.'}
         </p>
       </header>
 
       <div className="hero">
         <div className="growth">
           <div className="growth__head">
-            <span className="mono-label">Твой рост</span>
-            <span className="mono-label">{percent}% кольца дня</span>
+            <span className="mono-label">{viewer ? 'Рост подопечного' : 'Твой рост'}</span>
+            <span className="mono-label">{percent}% {viewer ? 'программы' : 'кольца дня'}</span>
           </div>
 
-          <Ring percent={percent} label="Прогресс адаптации" />
+          <Ring
+            percent={percent}
+            label={viewer ? 'Прогресс адаптации подопечного' : 'Прогресс адаптации'}
+          />
 
           <div className="growth__stats">
             <div>
@@ -88,22 +104,32 @@ export function ChecklistPanel() {
         </div>
 
         {allDone ? (
-          <div className="next next--done" aria-label="Адаптация пройдена">
+          <div
+            className="next next--done"
+            aria-label={viewer ? 'Подопечный прошёл все шаги' : 'Адаптация пройдена'}
+          >
             <span className="mono-label mono-label--forest">Кольцо замкнуто</span>
-            <h2>Адаптация пройдена</h2>
+            <h2>{viewer ? 'Подопечный прошёл все шаги' : 'Адаптация пройдена'}</h2>
             <p>
-              Все шаги плана отмечены. Дальше — самостоятельная работа: если остались вопросы,
-              спроси бадди или наставника.
+              {viewer
+                ? 'Все шаги плана отмечены. Прогресс обновится, если стажёр вернётся к какому-то пункту.'
+                : 'Все шаги плана отмечены. Дальше — самостоятельная работа: если остались вопросы, спроси бадди или наставника.'}
             </p>
             <div className="chips">
               <span className="tag">{done} из {total}</span>
             </div>
           </div>
         ) : nextItem ? (
-          <div className="next" aria-label="Следующий шаг">
-            <span className="mono-label mono-label--forest">Следующий шаг</span>
+          <div className="next" aria-label={viewer ? 'Ближайший шаг подопечного' : 'Следующий шаг'}>
+            <span className="mono-label mono-label--forest">
+              {viewer ? 'Ближайший шаг подопечного' : 'Следующий шаг'}
+            </span>
             <h2>{nextItem.title}</h2>
-            <p>Отметь пункт выполненным, когда закончишь, — кольцо дня сразу станет полнее.</p>
+            <p>
+              {viewer
+                ? 'Пункт отмечает стажёр в своём чек-листе — здесь прогресс обновляется автоматически.'
+                : 'Отметь пункт выполненным, когда закончишь, — кольцо дня сразу станет полнее.'}
+            </p>
             <div className="chips">
               <span className="tag">{weekLabel(nextItem.week)}</span>
             </div>
@@ -146,19 +172,33 @@ export function ChecklistPanel() {
                 const isDone = item.status === 'done'
                 const pendingThisItem =
                   completeMutation.isPending && completeMutation.variables === item.id
+                const itemIndex = indexById.get(item.id) ?? 0
+                const locked =
+                  !isDone && firstPendingIndex !== -1 && itemIndex > firstPendingIndex
+                const checkContent = isDone ? <Icon name="check" size={17} /> : null
 
                 return (
-                  <li key={item.id} className={`task ${isDone ? 'is-done' : ''}`}>
-                    <button
-                      className="task__check"
-                      type="button"
-                      aria-pressed={isDone}
-                      aria-label={`${isDone ? 'Пункт выполнен' : 'Отметить выполненным'}: ${item.title}`}
-                      disabled={isDone || pendingThisItem}
-                      onClick={() => completeMutation.mutate(item.id)}
-                    >
-                      {isDone ? <Icon name="check" size={17} /> : null}
-                    </button>
+                  <li
+                    key={item.id}
+                    className={`task ${isDone ? 'is-done' : ''} ${locked ? 'task--locked' : ''}`}
+                  >
+                    {viewer ? (
+                      <span className="task__check task__check--static" aria-hidden="true">
+                        {checkContent}
+                      </span>
+                    ) : (
+                      <button
+                        className="task__check"
+                        type="button"
+                        aria-pressed={isDone}
+                        aria-label={`${isDone ? 'Пункт выполнен' : 'Отметить выполненным'}: ${item.title}`}
+                        title={locked ? 'Сначала предыдущий шаг' : undefined}
+                        disabled={isDone || pendingThisItem || locked}
+                        onClick={() => completeMutation.mutate(item.id)}
+                      >
+                        {checkContent}
+                      </button>
+                    )}
                     <div className="task__body">
                       <h3>{item.title}</h3>
                       {item.description ? <p>{item.description}</p> : null}
@@ -167,6 +207,8 @@ export function ChecklistPanel() {
                       <span className="task__meta">
                         <span className="loading-line">Отмечаем</span>
                       </span>
+                    ) : locked ? (
+                      <span className="task__meta task__meta--locked">Сначала предыдущий шаг</span>
                     ) : null}
                   </li>
                 )

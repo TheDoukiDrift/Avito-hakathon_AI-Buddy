@@ -32,8 +32,10 @@ async def authenticate(session: AsyncSession, email: str, password: str) -> User
 async def first_intern(session: AsyncSession, actor: User) -> User:
     """The intern whose checklist/absences a privileged user is looking at.
 
-    Seed data has one intern per team, so "the intern of my team" is enough for
-    the scaffold; the dashboard can pass an explicit user_id later.
+    An intern always gets themselves. A mentor/manager gets the first intern of their
+    own team (404 when the team has none). HR BP is not tied to a team, so they get the
+    first intern overall. Seed data has one intern per team, so "the first one" is
+    enough for the scaffold; the dashboard can pass an explicit user_id later.
     """
     if actor.role is Role.intern:
         return actor
@@ -43,5 +45,5 @@ async def first_intern(session: AsyncSession, actor: User) -> User:
     stmt = stmt.order_by(User.id)
     intern = (await session.execute(stmt)).scalars().first()
     if intern is None:
-        raise NotFoundError("В команде нет стажёров")
+        raise NotFoundError("В команде нет стажёра")
     return intern

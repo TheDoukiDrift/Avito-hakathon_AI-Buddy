@@ -21,6 +21,12 @@ SYSTEM_PROMPT = (
     "Не раскрываешь данные, недоступные роли пользователя."
 )
 
+ROLE_POLICY = (
+    "\n\nПолитика роли: согласуй формулировки с ролью пользователя — руководитель и "
+    "наставник являются согласующей стороной, не предлагай им обратиться к себе; "
+    "HR BP ведёт финальный контроль, а стажёр согласует заявки с руководителем."
+)
+
 TOOL_POLICY = (
     "\n\nПравила:\n"
     "1. Каждый факт подкрепляй источником: «— по материалу «Название документа»».\n"
@@ -75,6 +81,7 @@ class OpenAICompatibleClient:
         system = (
             f"{SYSTEM_PROMPT}\n\nПользователь: {context.full_name} (роль: {role_label}). "
             f"Чек-лист: {context.done_count}/{len(context.checklist)} выполнено."
+            f"{ROLE_POLICY}"
         )
         tool_names = [schema["function"]["name"] for schema in tools or ()]
         system += TOOL_POLICY.format(tools=", ".join(tool_names) or "нет")
