@@ -184,6 +184,23 @@ describe('HTTP-клиент', () => {
     })
   })
 
+  it('отправляет решение по чужой заявке пустым телом', async () => {
+    fetchMock
+      .mockResolvedValueOnce(jsonResponse({ id: 11, status: 'approved' }))
+      .mockResolvedValueOnce(jsonResponse({ id: 11, status: 'rejected' }))
+
+    await expect(api.approveAbsence('11')).resolves.toMatchObject({ status: 'approved' })
+    await expect(api.rejectAbsence('11')).resolves.toMatchObject({ status: 'rejected' })
+
+    const calls = fetchMock.mock.calls as Array<[string, RequestInit]>
+    expect(calls.map((call) => call[0])).toEqual([
+      '/api/absences/11/approve',
+      '/api/absences/11/reject',
+    ])
+    expect(calls[0]?.[1].method).toBe('POST')
+    expect(JSON.parse(String(calls[0]?.[1].body))).toEqual({})
+  })
+
   it('показывает detail из ошибки 403', async () => {
     fetchMock.mockResolvedValueOnce(
       jsonResponse({ detail: 'Недостаточно прав для этого действия' }, 403),

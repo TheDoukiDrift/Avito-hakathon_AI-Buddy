@@ -87,7 +87,7 @@ describe('ChecklistPanel', () => {
     expect(await screen.findByText('Выполнено 1 из 3')).toBeInTheDocument()
   })
 
-  it('заменяет плашку следующего шага инверсной «АДАПТАЦИЯ ПРОЙДЕНА»', async () => {
+  it('заменяет плашку следующего шага состоянием «Адаптация пройдена»', async () => {
     const doneChecklist: ChecklistResponse = {
       items: checklist.items.map((item) => ({ ...item, status: 'done' })),
       next_item: null,
@@ -99,7 +99,7 @@ describe('ChecklistPanel', () => {
 
     const plate = await screen.findByLabelText('Адаптация пройдена')
 
-    expect(plate).toHaveTextContent('АДАПТАЦИЯ ПРОЙДЕНА')
+    expect(plate).toHaveTextContent('Адаптация пройдена')
     expect(plate).toHaveTextContent('3 из 3')
     expect(screen.queryByLabelText('Следующий шаг')).not.toBeInTheDocument()
   })

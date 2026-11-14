@@ -1,7 +1,8 @@
 import { useState, type FormEvent } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import * as api from '../api/client'
-import type { Absence, AbsenceType } from '../api/schemas'
+import type { Absence, AbsenceType, Role } from '../api/schemas'
+import { useAuthStore } from '../stores/authStore'
 import {
   absenceStatusMeta,
   absenceTypeLabel,
@@ -9,13 +10,37 @@ import {
   todayIso,
 } from '../utils/labels'
 import { describeError } from '../utils/errors'
+import { Icon } from './Icon'
 import { InlineError } from './InlineError'
 import { LoadingLine } from './LoadingLine'
 
 const ABSENCE_TYPES: AbsenceType[] = ['day_off', 'vacation', 'sick']
 
+/** Кто вправе согласовать чужую заявку (RBAC бэкенда: mentor/manager/hr_bp). */
+const DECIDER_ROLES: Role[] = ['mentor', 'manager', 'hr_bp']
+
+type Decision = 'approve' | 'reject'
+
+interface DecisionInput {
+  id: string
+  action: Decision
+}
+
+/**
+ * Кнопки решения показываем только там, где бэкенд точно их примет:
+ * согласующая роль, статус «на согласовании», заявка не своя.
+ * Без user_id в ответе (старый контракт) решать не берёмся.
+ */
+function canDecide(role: Role | undefined, userId: string | undefined, absence: Absence): boolean {
+  if (!role || !DECIDER_ROLES.includes(role)) return false
+  if (absence.status !== 'pending_approval') return false
+  if (absence.user_id === undefined) return false
+  return absence.user_id !== userId
+}
+
 export function AbsenceCard() {
   const queryClient = useQueryClient()
+  const user = useAuthStore((state) => state.user)
 
   const [type, setType] = useState<AbsenceType>('day_off')
   const [dateFrom, setDateFrom] = useState(todayIso())
@@ -52,6 +77,20 @@ export function AbsenceCard() {
     },
   })
 
+  const decisionMutation = useMutation({
+    mutationFn: ({ id, action }: DecisionInput) =>
+      action === 'approve' ? api.approveAbsence(id) : api.rejectAbsence(id),
+    onSuccess: (update) => {
+      // Строка меняет статус сразу; кэш всё равно сверяем с сервером.
+      queryClient.setQueryData<Absence[]>(['absences'], (current) =>
+        current
+          ? current.map((item) => (item.id === update.id ? { ...item, status: update.status } : item))
+          : current,
+      )
+      void queryClient.invalidateQueries({ queryKey: ['absences'] })
+    },
+  })
+
   const submitDraft = () => {
     if (!dateFrom || !dateTo) {
       setFormError('Укажите дату начала и окончания.')
@@ -81,19 +120,22 @@ export function AbsenceCard() {
     setFormError(null)
     createMutation.reset()
     confirmMutation.reset()
+    decisionMutation.reset()
   }
 
   const draftStatus = draft ? absenceStatusMeta(draft.status) : null
   const isDraft = draft?.status === 'draft'
+  const decidingId = decisionMutation.isPending ? decisionMutation.variables?.id : undefined
 
   return (
     <section className="panel" aria-label="Заявка на отсутствие">
-      <div className="sec-head sec-head--sm">
-        <span className="sec-num">03 —</span>
-        <h2 className="sec-title">Заявки</h2>
-        <span className="sec-rule" />
-      </div>
-      <p className="panel__subtitle">Отгул, отпуск или больничный</p>
+      <header className="intro">
+        <p className="eyebrow">Организационные действия</p>
+        <h1>Заявки</h1>
+        <p className="lead">
+          Отгул, отпуск или больничный: черновик, затем согласование руководителя и HR BP.
+        </p>
+      </header>
 
       {!draft ? (
         <form className="absence-form" onSubmit={handleSubmit}>
@@ -166,7 +208,7 @@ export function AbsenceCard() {
           ) : null}
 
           <button
-            className="button button--primary button--block"
+            className="btn btn--primary btn--block"
             type="submit"
             disabled={createMutation.isPending}
           >
@@ -174,7 +216,7 @@ export function AbsenceCard() {
           </button>
         </form>
       ) : (
-        <div className="absence-draft">
+        <div className="card card--paper absence-draft">
           <div className="absence-draft__row">
             <span className="absence-draft__label">Тип</span>
             <span>{absenceTypeLabel(draft.type)}</span>
@@ -199,7 +241,7 @@ export function AbsenceCard() {
           {isDraft ? (
             <>
               <p className="absence-draft__note">
-                Проверьте детали. После подтверждения заявка уйдёт руководителю, затем HR BP.
+                Проверь детали. После подтверждения заявка уйдёт руководителю, затем HR BP.
               </p>
               {confirmMutation.isError ? (
                 <InlineError
@@ -210,16 +252,16 @@ export function AbsenceCard() {
                   }}
                 />
               ) : null}
-              <div className="absence-draft__actions">
+              <div className="actions">
                 <button
-                  className="button button--primary"
+                  className="btn btn--primary"
                   type="button"
                   disabled={confirmMutation.isPending}
                   onClick={() => confirmMutation.mutate(draft.id)}
                 >
                   {confirmMutation.isPending ? 'Отправляем…' : 'Подтвердить и отправить'}
                 </button>
-                <button className="button button--ghost" type="button" onClick={startNew}>
+                <button className="btn btn--ghost" type="button" onClick={startNew}>
                   Отменить
                 </button>
               </div>
@@ -231,8 +273,8 @@ export function AbsenceCard() {
                   ? 'Заявка отправлена: сначала согласует руководитель, затем HR BP.'
                   : 'Статус заявки обновлён.'}
               </p>
-              <div className="absence-draft__actions">
-                <button className="button button--ghost" type="button" onClick={startNew}>
+              <div className="actions">
+                <button className="btn btn--ghost" type="button" onClick={startNew}>
                   Новая заявка
                 </button>
               </div>
@@ -242,7 +284,7 @@ export function AbsenceCard() {
       )}
 
       <div className="absence-list">
-        <h3 className="absence-list__title">Мои заявки</h3>
+        <h2 className="mono-label">Мои заявки</h2>
         {absencesQuery.isLoading ? <LoadingLine label="Загружаем заявки" /> : null}
         {absencesQuery.isError ? (
           <InlineError
@@ -251,26 +293,62 @@ export function AbsenceCard() {
           />
         ) : null}
         {absencesQuery.data && absencesQuery.data.length === 0 ? (
-          <p className="panel__placeholder">
-            Заявок пока нет — спросите бадди: «оформи отгул завтра»
-          </p>
+          <p className="empty">Заявок пока нет — спросите бадди: «оформи отгул завтра»</p>
         ) : null}
-        <ul className="absence-list__items">
+
+        <ul className="tasks">
           {(absencesQuery.data ?? []).map((absence) => {
             const meta = absenceStatusMeta(absence.status)
+            const decidable = canDecide(user?.role, user?.id, absence)
+            const busy = decidingId === absence.id
+
             return (
-              <li key={absence.id} className="absence-list__item">
-                <div>
-                  <p className="absence-list__type">
+              <li key={absence.id} className="task task--absence">
+                <div className="task__body">
+                  <h3>
                     {absenceTypeLabel(absence.type)} · {formatDateRange(absence.date_from, absence.date_to)}
-                  </p>
-                  {absence.reason ? <p className="absence-list__reason">{absence.reason}</p> : null}
+                  </h3>
+                  {absence.reason ? <p>{absence.reason}</p> : null}
+                  <div className="task__meta">
+                    <span className={`badge badge--${meta.tone}`}>{meta.label}</span>
+                  </div>
+
+                  {decidable ? (
+                    <div className="actions absence-decision">
+                      <button
+                        className="btn btn--sm btn--approve"
+                        type="button"
+                        disabled={busy}
+                        onClick={() => decisionMutation.mutate({ id: absence.id, action: 'approve' })}
+                      >
+                        <Icon name="check" size={16} /> Согласовать
+                      </button>
+                      <button
+                        className="btn btn--sm btn--reject"
+                        type="button"
+                        disabled={busy}
+                        onClick={() => decisionMutation.mutate({ id: absence.id, action: 'reject' })}
+                      >
+                        <Icon name="x" size={16} /> Отклонить
+                      </button>
+                    </div>
+                  ) : null}
                 </div>
-                <span className={`badge badge--${meta.tone}`}>{meta.label}</span>
               </li>
             )
           })}
         </ul>
+
+        {decisionMutation.isError ? (
+          <InlineError
+            prefix="Ошибка"
+            message={describeError(decisionMutation.error, 'не удалось изменить статус заявки')}
+            onRetry={() => {
+              const input = decisionMutation.variables
+              if (input) decisionMutation.mutate(input)
+            }}
+          />
+        ) : null}
       </div>
     </section>
   )

@@ -4,6 +4,7 @@ import { describeError } from '../utils/errors'
 import { initials } from '../utils/labels'
 import { InlineError } from './InlineError'
 import { LoadingLine } from './LoadingLine'
+import { RingAvatar } from './Rings'
 
 export function ContactsList() {
   const contactsQuery = useQuery({
@@ -13,14 +14,15 @@ export function ContactsList() {
 
   return (
     <section className="panel" aria-label="Контакты">
-      <div className="sec-head sec-head--sm">
-        <span className="sec-num">04 —</span>
-        <h2 className="sec-title">Контакты</h2>
-        <span className="sec-rule" />
-      </div>
-      <p className="panel__subtitle">Команда адаптации</p>
+      <header className="intro">
+        <p className="eyebrow">Команда адаптации</p>
+        <h1>Контакты</h1>
+        <p className="lead">
+          Наставник и ответственные за обучение — человеческая поддержка рядом с бадди.
+        </p>
+      </header>
 
-      {contactsQuery.isLoading ? <LoadingLine /> : null}
+      {contactsQuery.isLoading ? <LoadingLine label="Загружаем контакты" /> : null}
 
       {contactsQuery.isError ? (
         <InlineError
@@ -30,15 +32,13 @@ export function ContactsList() {
       ) : null}
 
       {contactsQuery.data && contactsQuery.data.length === 0 ? (
-        <p className="panel__placeholder">Контакты пока не добавлены.</p>
+        <p className="empty">Контакты пока не добавлены.</p>
       ) : null}
 
       <ul className="contacts">
         {(contactsQuery.data ?? []).map((contact) => (
           <li key={contact.id} className="contacts__item">
-            <span className="contacts__avatar" aria-hidden="true">
-              {initials(contact.name)}
-            </span>
+            <RingAvatar initials={initials(contact.name)} />
             <div className="contacts__info">
               <p className="contacts__name">{contact.name}</p>
               <p className="contacts__role">

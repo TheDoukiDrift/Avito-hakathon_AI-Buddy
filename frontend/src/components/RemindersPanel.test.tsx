@@ -47,7 +47,7 @@ describe('RemindersPanel', () => {
     expect(await screen.findByText('Не забудьте составить план на неделю')).toBeInTheDocument()
     expect(screen.getByText('Доступы к репозиторию всё ещё не запрошены')).toBeInTheDocument()
     expect(screen.getByRole('heading', { name: 'Напоминания' })).toBeInTheDocument()
-    expect(screen.getByText('05 —')).toBeInTheDocument()
+    expect(screen.getByText('AI-крон · по чек-листу')).toBeInTheDocument()
     expect(screen.getAllByText(/10 ноября/).length).toBeGreaterThan(0)
     expect(screen.getAllByRole('button', { name: 'Принял' })).toHaveLength(2)
   })

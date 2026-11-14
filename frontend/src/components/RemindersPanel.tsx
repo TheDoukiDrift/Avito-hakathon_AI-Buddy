@@ -2,12 +2,13 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import * as api from '../api/client'
 import { describeError } from '../utils/errors'
 import { formatDate, formatTime } from '../utils/labels'
+import { Icon } from './Icon'
 import { InlineError } from './InlineError'
 
 /**
- * Секция «05 — НАПОМИНАНИЯ»: что AI-крон оставил пользователю по чек-листу.
+ * «Напоминания»: что AI-крон оставил пользователю по чек-листу.
  * Пустое состояние не рендерится вовсе — секция появляется только с данными,
- * поэтому пустая вкладка не занимает место на экране.
+ * поэтому пустой блок не занимает место на экране.
  */
 export function RemindersPanel() {
   const queryClient = useQueryClient()
@@ -26,17 +27,21 @@ export function RemindersPanel() {
 
   const reminders = remindersQuery.data ?? []
 
-  // Нет данных — нет секции: пустой блок в сайдбаре только шумит.
+  // Нет данных — нет секции: пустой блок только шумит.
   // Ошибка загрузки — исключение: её показываем, даже если список пуст.
   if (reminders.length === 0 && !remindersQuery.isError) return null
 
   return (
-    <section className="panel panel--reminders" aria-label="Напоминания">
-      <div className="sec-head sec-head--sm">
-        <span className="sec-num">05 —</span>
-        <h2 className="sec-title">Напоминания</h2>
-        <span className="sec-rule" />
-        <span className="panel__percent">{reminders.length}</span>
+    <section className="card card--sand reminders" aria-label="Напоминания">
+      <div className="reminders__head">
+        <span className="card__icon">
+          <Icon name="clock" size={22} />
+        </span>
+        <div>
+          <span className="mono-label">AI-крон · по чек-листу</span>
+          <h2>Напоминания</h2>
+        </div>
+        <span className="tag">{reminders.length}</span>
       </div>
 
       {remindersQuery.isError ? (
@@ -46,7 +51,7 @@ export function RemindersPanel() {
         />
       ) : null}
 
-      <ul className="reminders">
+      <ul className="reminders__list">
         {reminders.map((reminder) => {
           const acking = ackMutation.isPending && ackMutation.variables === reminder.id
           const meta = `${formatDate(reminder.created_at)} · ${formatTime(reminder.created_at)}`
@@ -58,7 +63,7 @@ export function RemindersPanel() {
                 <p className="reminders__meta">{meta}</p>
               </div>
               <button
-                className="button button--ghost button--small reminders__ack"
+                className="btn btn--sm reminders__ack"
                 type="button"
                 disabled={acking}
                 onClick={() => ackMutation.mutate(reminder.id)}

@@ -206,6 +206,24 @@ export function fetchAbsences(): Promise<Absence[]> {
   return request('/absences', absencesSchema)
 }
 
+/**
+ * Решение по чужой заявке: согласовать или отклонить. Тело пустое —
+ * решение однозначно определяет сам эндпоинт.
+ */
+export function approveAbsence(id: string): Promise<AbsenceStatusUpdate> {
+  return request(`/absences/${encodeURIComponent(id)}/approve`, absenceStatusUpdateSchema, {
+    method: 'POST',
+    body: {},
+  })
+}
+
+export function rejectAbsence(id: string): Promise<AbsenceStatusUpdate> {
+  return request(`/absences/${encodeURIComponent(id)}/reject`, absenceStatusUpdateSchema, {
+    method: 'POST',
+    body: {},
+  })
+}
+
 export function fetchContacts(): Promise<Contact[]> {
   return request('/contacts', contactsSchema)
 }

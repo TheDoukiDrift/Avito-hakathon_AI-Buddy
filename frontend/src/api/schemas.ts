@@ -114,6 +114,11 @@ export type AbsenceType = z.infer<typeof absenceTypeSchema>
  */
 export const absenceSchema = z.object({
   id: idSchema,
+  /**
+   * Владелец заявки. Нужен, чтобы решать чужие заявки и не предлагать
+   * согласование собственной: бэкенд self-approval запрещает.
+   */
+  user_id: idSchema.optional(),
   type: absenceTypeSchema,
   date_from: z.string(),
   date_to: z.string(),

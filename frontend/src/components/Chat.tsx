@@ -1,8 +1,10 @@
 import { useEffect, useRef, useState, type FormEvent, type KeyboardEvent } from 'react'
 import { useChatStore } from '../stores/chatStore'
+import { Icon } from './Icon'
 import { InlineError } from './InlineError'
 import { LoadingLine } from './LoadingLine'
 import { Message } from './Message'
+import { ChatMark } from './Rings'
 
 const SUGGESTIONS = [
   'Как оформить отгул?',
@@ -10,7 +12,13 @@ const SUGGESTIONS = [
   'К кому обратиться по поводу командировки?',
 ]
 
-export function Chat() {
+interface ChatProps {
+  /** На узких экранах чат — выдвижная панель; на широких проп не нужен. */
+  open?: boolean
+  onClose?: () => void
+}
+
+export function Chat({ open = false, onClose }: ChatProps) {
   const messages = useChatStore((state) => state.messages)
   const historyLoaded = useChatStore((state) => state.historyLoaded)
   const sending = useChatStore((state) => state.sending)
@@ -69,19 +77,22 @@ export function Chat() {
   }
 
   return (
-    <section className="chat" aria-label="Чат с бадди">
+    <aside className={`chat ${open ? 'chat--open' : ''}`.trim()} aria-label="Чат с бадди">
       <div className="chat__head">
-        <div className="sec-head">
-          <span className="sec-num">01 —</span>
-          <h2 className="sec-title">Чат</h2>
-          <span className="sec-rule" />
-          {sending ? (
-            <span className="badge badge--wait">Ожидание ответа</span>
-          ) : (
-            <span className="badge badge--live">На связи</span>
-          )}
+        <ChatMark />
+        <div className="chat__title">
+          <strong>AI-buddy</strong>
+          <small>Помощник по адаптации · {sending ? 'готовит ответ' : 'на связи'}</small>
         </div>
-        <p className="chat__subtitle">Бадди отвечает о процессах, инструментах и адаптации</p>
+        {onClose ? (
+          <button className="chat__close" type="button" onClick={onClose} aria-label="Закрыть чат">
+            <Icon name="x" size={20} />
+          </button>
+        ) : null}
+      </div>
+
+      <div className="scope">
+        <Icon name="shield" size={16} /> Отвечаю в рамках твоего доступа
       </div>
 
       <div className="chat__messages" aria-live="polite" ref={scrollRef}>
@@ -95,17 +106,12 @@ export function Chat() {
           <div className="chat__empty">
             <p className="chat__empty-title">Привет! Я бадди — помогу освоиться.</p>
             <p className="chat__empty-text">
-              Спросите о процедурах, чек-листе или организационных действиях. Можно начать
-              с одного из вопросов:
+              Спроси о процедурах, чек-листе или организационных действиях. Можно начать с
+              одного из вопросов:
             </p>
-            <div className="chat__suggestions">
+            <div className="hints">
               {SUGGESTIONS.map((suggestion) => (
-                <button
-                  key={suggestion}
-                  type="button"
-                  className="button button--ghost"
-                  onClick={() => sendSuggestion(suggestion)}
-                >
+                <button key={suggestion} type="button" onClick={() => sendSuggestion(suggestion)}>
                   {suggestion}
                 </button>
               ))}
@@ -124,25 +130,28 @@ export function Chat() {
 
       {error ? <InlineError message={error} onRetry={retry} /> : null}
 
-      <form className="chat__composer" onSubmit={submit}>
-        <textarea
-          className="chat__input"
-          value={draft}
-          onChange={(event) => setDraft(event.target.value)}
-          onKeyDown={handleKeyDown}
-          placeholder="Спросите что-нибудь у бадди…"
-          rows={1}
-          aria-label="Сообщение"
-        />
-        <button
-          className="button button--primary chat__send"
-          type="submit"
-          disabled={sending || draft.trim().length === 0}
-        >
-          {sending ? 'Печатает…' : 'Отправить'}
-        </button>
-      </form>
-      <p className="chat__hint">Enter — отправить, Shift + Enter — новая строка</p>
-    </section>
+      <div className="chat__foot">
+        <form className="compose" onSubmit={submit}>
+          <textarea
+            className="chat__input"
+            value={draft}
+            onChange={(event) => setDraft(event.target.value)}
+            onKeyDown={handleKeyDown}
+            placeholder="Спроси что-нибудь у бадди…"
+            rows={1}
+            aria-label="Сообщение"
+          />
+          <button
+            className="compose__send"
+            type="submit"
+            disabled={sending || draft.trim().length === 0}
+            aria-label={sending ? 'Печатает…' : 'Отправить'}
+          >
+            <Icon name="send" size={19} />
+          </button>
+        </form>
+        <p className="disclaimer">Enter — отправить, Shift + Enter — новая строка</p>
+      </div>
+    </aside>
   )
 }

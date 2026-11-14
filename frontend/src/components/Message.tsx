@@ -30,30 +30,29 @@ export function Message({ message, streaming = false }: MessageProps) {
   const hasContent = message.content.trim().length > 0
 
   return (
-    <article className={`message ${isUser ? 'message--user' : 'message--assistant'}`}>
-      <span className="message__role">{isUser ? 'Вы' : 'Бадди'}</span>
-      <div className="message__body">
-        <div className={`message__text ${isUser ? '' : 'message__text--markdown'}`.trim()}>
-          {hasContent ? (
-            isUser ? (
-              message.content
-            ) : (
-              <ReactMarkdown remarkPlugins={remarkPlugins} components={markdownComponents}>
-                {message.content}
-              </ReactMarkdown>
-            )
-          ) : null}
-          {streaming ? (
-            <span className="blink" aria-hidden="true">
-              ▋
-            </span>
-          ) : null}
-        </div>
-        <div className="message__meta">
-          {isUser ? 'Вы' : 'AI-buddy'}
-          {message.created_at ? ` · ${formatTime(message.created_at)}` : ''}
-        </div>
+    <article className={`msg ${isUser ? 'msg--user' : 'msg--assistant'}`}>
+      <span className="msg__who">{isUser ? 'Вы' : 'AI-buddy'}</span>
+      <div className={`msg__text ${isUser ? '' : 'msg__text--markdown'}`.trim()}>
+        {hasContent ? (
+          isUser ? (
+            message.content
+          ) : (
+            <ReactMarkdown remarkPlugins={remarkPlugins} components={markdownComponents}>
+              {message.content}
+            </ReactMarkdown>
+          )
+        ) : null}
+        {streaming ? (
+          <span className="typing" aria-hidden="true">
+            <i />
+            <i />
+            <i />
+          </span>
+        ) : null}
       </div>
+      <span className="msg__meta">
+        {message.created_at ? formatTime(message.created_at) : ''}
+      </span>
     </article>
   )
 }
